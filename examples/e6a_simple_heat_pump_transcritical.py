@@ -129,6 +129,7 @@ def calculate_single_point():
     from vclibpy.components.heat_exchangers import moving_boundary_ntu
     from vclibpy.components.heat_exchangers import heat_transfer
     from vclibpy.algorithms.iteration import Iteration
+    import pandas as pd
 
     condenser = moving_boundary_ntu.MovingBoundaryNTUGasCooler(
         A=30,
@@ -177,7 +178,7 @@ def calculate_single_point():
     from vclibpy.algorithms.iteration import Iteration
     from vclibpy.utils.plotting import plot_cycle
 
-    save_path = r"D:\00_temp\standard_ejector_cycle"
+    save_path = r"C:\Users\fabia\Downloads"
     algorithm = Iteration(raise_errors=True, save_path_plots=save_path, show_iteration=True)
     speed_control = RelativeCompressorSpeedControl(0.2, 0.0, 0)
     eva_inputs = HeatExchangerInputs(T_in=18 + 273.15, m_flow=1)
@@ -205,6 +206,16 @@ def calculate_single_point():
     print(f"state_inlet = {flowsheet.evaporator.state_inlet}")
     print(f"state_outlet = {flowsheet.evaporator.state_outlet}")
     print(f"COP: {fs_state.get('COP').value}")
+
+    # Save to excel
+    variables_to_excel = [{
+        **fs_state.convert_to_str_value_format(with_unit_and_description=False),
+    }]
+
+    save_path_csv = f"{save_path}\\{flowsheet.flowsheet_name}_{flowsheet.fluid}.csv"
+    pd.DataFrame(variables_to_excel).to_csv(
+        save_path_csv, sep=","
+    )
 
 
 
