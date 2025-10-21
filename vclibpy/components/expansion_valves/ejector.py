@@ -256,9 +256,7 @@ class Ejector(ThreePortComponent):
             state_throat_vapor = self.med_prop.calc_state("PQ", self.p_throat, 1)
             state_throat_liquid = self.med_prop.calc_state("PQ", self.p_throat, 0)
             # Volume fractions inside throat
-            phi_throat_vapor = ((state_throat.q/state_throat_vapor.d) /
-                                ((state_throat.q/state_throat_vapor.d) +
-                                 ((1-state_throat.q)/state_throat_liquid.d)))
+            phi_throat_vapor = state_throat.q*state_throat.d/state_throat_vapor.d
             phi_throat_liquid = 1 - phi_throat_vapor
             # Speed of sound for separate phases
             a_liquid = self.med_prop.get_saturated_speed_of_sound(self.p_throat, False)
