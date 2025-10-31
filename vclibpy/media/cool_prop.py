@@ -38,7 +38,8 @@ class CoolProp(MedProp):
         "H": CoolPropInternal.iHmass,  # Enthalpy (mass-based)
         "S": CoolPropInternal.iSmass,  # Entropy (mass-based)
         "U": CoolPropInternal.iUmass,  # Internal Energy (mass-based)
-    }
+        "q": CoolPropInternal.iQ,      # Vapor Quality (mass-based)
+    } # additional states might be added later (check CoolProp documentation for available properties)
 
     def __init__(self, fluid_name, use_high_level_api: bool = False):
         super().__init__(fluid_name=fluid_name)
@@ -169,16 +170,23 @@ class CoolProp(MedProp):
         if {numerator, denominator, constant} - self._state_function_map.keys():
             raise ValueError("Invalid property name! Use one of: " + ", ".join(self._state_function_map.keys()))
 
-        # When near the two phase region we have to use the PropsSI() function from the CoolProp High Level Interface
-        # Otherwise we can use the more computing friendly first_partial_deriv() function
-        if 0<=state.q<=1:
-            return CoolPropInternal.PropsSI(f'd({numerator})/d({denominator})|{constant}', 'P', state.p, 'Q', state.q, self.fluid_name)
+        self._update_coolprop_heos("PH", state.p, state.h)
+        numerator_code = self._state_function_map[numerator]
+        denominator_code = self._state_function_map[denominator]
+        constant_code = self._state_function_map[constant]
+
+        if constant_code is CoolPropInternal.iQ:
+            return self._helmholtz_equation_of_state.first_saturation_deriv(numerator_code, denominator_code)
         else:
-            self._update_coolprop_heos("PT", state.p, state.T)
-            numerator_code = self._state_function_map[numerator]
-            denominator_code = self._state_function_map[denominator]
-            constant_code = self._state_function_map[constant]
-            return self._helmholtz_equation_of_state.first_partial_deriv(numerator_code, denominator_code, constant_code)
+            if 0<=state.q<=1:
+                try:
+                    return self._helmholtz_equation_of_state.first_two_phase_deriv(numerator_code, denominator_code, constant_code)
+                except ValueError as err:
+                    logger.info("Could not use low level Interface for calculation. Trying high level interface: %s",err)
+                    return CoolPropInternal.PropsSI(f'd({numerator})/d({denominator})|{constant}', 'P', state.p, 'Q', state.q, self.fluid_name)
+
+            else:
+                return self._helmholtz_equation_of_state.first_partial_deriv(numerator_code, denominator_code, constant_code)
 
 if __name__ == '__main__':
     CoolProp("Propan")
