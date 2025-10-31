@@ -28,7 +28,7 @@ except OSError:
 
 mpl.rcParams['svg.fonttype'] = 'none'  # make pyplot save text as text and not paths, so it is editable in Inkscape
 
-med_prop = RefProp(fluid_name="CarbonDioxide")
+med_prop = CoolProp(fluid_name="CarbonDioxide")
 ejector = Ejector(0.8, 2, use_quick_solver=True)  # Ejector 1
 ejector_2 = Ejector(1, 2.6, use_quick_solver=True)  # Ejector 2
 ejector.med_prop = med_prop
@@ -41,8 +41,9 @@ def main(use_condenser_inlet: bool = True):
     # p_throat_iteration()
     # calc_single_ejector_state()
     # test_standard_ejector_cycle()
-    error_calculation_v_secondary_mixing()
+    # error_calculation_v_secondary_mixing()
     # qne_plot()
+    sound_speed_calculation()
 
 def test_standard_ejector_cycle():
     from vclibpy.components.heat_exchangers import moving_boundary_ntu
@@ -324,7 +325,9 @@ def sound_speed_calculation():
     c = []
     c_2 = []
     c_3 = []
-    c_4 = []
+    c_attou_list = []
+    term2 = []
+    term1 = []
     phi = []
 
     state_throat_vapor = med_prop.calc_state("PQ", p_throat, 1)
@@ -348,10 +351,14 @@ def sound_speed_calculation():
         C_p_liquid = state_throat_liquid.d * phi_throat_liquid * c_p_liquid
         C_p_vapor = state_throat_vapor.d * phi_throat_vapor * c_p_vapor
         # Thermal expansion coefficients
-        beta_liquid = med_prop.calc_transport_properties(state_throat_liquid).beta
-        beta_vapor = med_prop.calc_transport_properties(state_throat_vapor).beta
-        zeta_liquid = state_throat.T * beta_liquid / (state_throat_liquid.d * c_p_liquid)
-        zeta_vapor = state_throat.T * beta_vapor / (state_throat_vapor.d * c_p_vapor)
+        if isinstance(med_prop, RefProp):
+            beta_liquid = med_prop.calc_transport_properties(state_throat_liquid).beta
+            beta_vapor = med_prop.calc_transport_properties(state_throat_vapor).beta
+            zeta_liquid = state_throat.T * beta_liquid / (state_throat_liquid.d * c_p_liquid)
+            zeta_vapor = state_throat.T * beta_vapor / (state_throat_vapor.d * c_p_vapor)
+        elif isinstance(med_prop, CoolProp):
+            zeta_vapor = med_prop.get_partial_derivative("T", "P", "S", state_throat_vapor)
+            zeta_liquid = med_prop.get_partial_derivative("T", "P", "S", state_throat_liquid)
         x_1 = (phi_throat_vapor / (state_throat_vapor.d * a_vapor ** 2) +
                phi_throat_liquid / (state_throat_liquid.d * a_liquid ** 2))
         x_2 = C_p_vapor * C_p_liquid * (zeta_liquid - zeta_vapor) ** 2 / (C_p_vapor + C_p_liquid)
@@ -365,10 +372,30 @@ def sound_speed_calculation():
         dT_dp_s_value_l = CP.PropsSI('d(T)/d(P)|S', 'P', p_throat, 'Q', 0, "CarbonDioxide")
         dT_dp_s_value_g = CP.PropsSI('d(T)/d(P)|S', 'P', p_throat, 'Q', 1, "CarbonDioxide")
         c_throat_3 = (state_throat.d * x_1 + (state_throat.d / state_throat.T) * C_p_vapor*C_p_liquid*(dT_dp_s_value_l-dT_dp_s_value_g)**2/(C_p_vapor+C_p_liquid)) ** -0.5
-        print(
-            f"q={q}: c_throat_3 = ({state_throat.d} * {x_1} + ({state_throat.d} / {state_throat.T}) * {C_p_vapor} * {C_p_liquid} * ({dT_dp_s_value_l} - {dT_dp_s_value_g}) ** 2 / ({C_p_vapor} + {C_p_liquid})) ** -0.5")
+        # print(f"q={q}: c_throat_3 = ({state_throat.d} * {x_1} + ({state_throat.d} / {state_throat.T}) * {C_p_vapor} * {C_p_liquid} * ({dT_dp_s_value_l} - {dT_dp_s_value_g}) ** 2 / ({C_p_vapor} + {C_p_liquid})) ** -0.5")
         c_3.append(c_throat_3)
-        c_4.append(state_throat.q/state_throat.T*x_2)
+        term2.append(state_throat.d/state_throat.T*x_2)
+        term1.append(state_throat.d * x_1)
+
+        # calculate speed of sound for two phase flow with correlation from Attou and Seynhaeve (1999)
+        if isinstance(med_prop, CoolProp):
+            # only works in coolprop
+
+            # compute partial derivatives for enthalpy and specific volume and print equations with values
+            dh_dpq_v = med_prop.get_partial_derivative("H", "P", "q", state_throat_vapor)
+            dh_dpq_l = med_prop.get_partial_derivative("H", "P", "q", state_throat_liquid)
+            del_h = state_throat.q * dh_dpq_v + (1 - state_throat.q) * dh_dpq_l
+
+            dD_dpq_v = med_prop.get_partial_derivative("D", "P", "q", state_throat_vapor)
+            dD_dpq_l = med_prop.get_partial_derivative("D", "P", "q", state_throat_liquid)
+            term_v = state_throat.q * (-1.0) / state_throat_vapor.d**2 * dD_dpq_v
+            term_l = (1 - state_throat.q) * (-1.0) / state_throat_liquid.d**2 * dD_dpq_l
+            del_v = term_v + term_l
+
+            numerator = state_throat.v**2 * (state_throat_vapor.h - state_throat_liquid.h)
+            denominator = ((state_throat_vapor.v - state_throat_liquid.v) * (del_h - state_throat.v) - del_v * (state_throat_vapor.h - state_throat_liquid.h))
+            c_attou = (numerator / denominator) ** 0.5
+            c_attou_list.append(c_attou)
 
     print(med_prop.get_saturated_speed_of_sound(p_throat, False))
     print(med_prop.get_saturated_speed_of_sound(p_throat, True))
@@ -383,7 +410,8 @@ def sound_speed_calculation():
     plt.subplot(2, 1, 1)
     plt.plot(phi, c, label="long")
     plt.plot(phi, c_2, label="short")
-    plt.plot(phi, c_3, label="CoolProp")
+    plt.plot(phi, c_3, label="CoolProp", linestyle='--')
+    plt.plot(phi, c_attou_list, label="attou")
     plt.legend()
     plt.xlabel('Quality')
     plt.ylabel('Speed of sound')
@@ -391,7 +419,9 @@ def sound_speed_calculation():
 
     # Second subplot
     plt.subplot(2, 1, 2)
-    plt.plot(phi, c_4, label="difference")
+    plt.plot(phi, term1, label="term 1")
+    plt.plot(phi, term2, label="term 2")
+    plt.plot(phi, numpy.divide(term2, term1), label="term 2 / term 1")
     plt.legend()
     plt.xlabel('Quality')
     plt.ylabel('Speed of sound difference')
