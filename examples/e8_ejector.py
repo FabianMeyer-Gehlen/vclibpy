@@ -43,7 +43,8 @@ def main(use_condenser_inlet: bool = True):
     # test_standard_ejector_cycle()
     # error_calculation_v_secondary_mixing()
     # qne_plot()
-    sound_speed_calculation()
+    # sound_speed_calculation()
+    sound_speed_calculation_3d()
 
 def test_standard_ejector_cycle():
     from vclibpy.components.heat_exchangers import moving_boundary_ntu
@@ -717,7 +718,12 @@ def error_calculation_v_secondary_mixing():
 
 
 def p_throat_iteration():
+    """Function to compare the calculation of p_throat via iteration, correlation and with/without Q_NE factor.
 
+    When calling: change in ejector.py:
+    1. Add "return" statement after calculation of m_flow_primary in calc_m_flow method since calculation of secondary pressures and velocities is not needed here.
+    2. To examine different sound speed calculation methods, modify the calculation of c_throat in the iterate_throat_pressure method accordingly.
+    """
     pp_list = [8.1, 8.15, 8.39, 8.43, 8.44, 8.66, 8.71, 8.72, 9.04, 9.05, 9.19, 9.22, 9.26, 9.3, 9.33, 9.34, 9.45, 9.57,
                9.67, 9.71]
     pp_list_2 = list(numpy.arange(7.9, 10.1, 0.1))
@@ -729,6 +735,10 @@ def p_throat_iteration():
     pt_list = []
     pt_list_correlation = []
     pt_list_qne = []
+    vt_list = []
+    vt_list_correlation = []
+    vt_list_qne = []
+    vt2_list_correlation = []
     rel_fehler_qne = []
     rel_fehler_no_qne = []
 
@@ -742,16 +752,20 @@ def p_throat_iteration():
         m_flow_list.append(ejector.m_flow_primary * 3600)
         q_list.append(ejector.state_throat.q)
         pt_list.append(ejector.state_throat.p / 1e6)
+        vt_list.append(ejector.c_throat)
 
         ejector.state_primary = med_prop.calc_state("PT", pp_list_2[i] * 1e6, 35.2 + 273.15)
         ejector.calc_m_flow(4.2 * 1e6, correlation=True)
         m_flow_list_correlation.append(ejector.m_flow_primary * 3600)
         pt_list_correlation.append(ejector.state_throat.p / 1e6)
+        vt_list_correlation.append(ejector.c_throat)
+        vt2_list_correlation.append(ejector.c_throat2)
 
         ejector.state_primary = med_prop.calc_state("PT", pp_list_2[i] * 1e6, 35.2 + 273.15)
         ejector.calc_m_flow(4.2 * 1e6, correlation=False, QNE=True)
         m_flow_list_qne.append(ejector.m_flow_primary * 3600)
         pt_list_qne.append(ejector.state_throat.p / 1e6)
+        vt_list_qne.append(ejector.c_throat)
 
         rel_fehler_qne.append((pt_list_qne[i] - pt_list_correlation[i])/pt_list_correlation[i]*100)
         rel_fehler_no_qne.append((pt_list[i] - pt_list_correlation[i])/pt_list_correlation[i]*100)
@@ -770,7 +784,7 @@ def p_throat_iteration():
     # plt.subplot(3, 1, 3)
     plt.figure(figsize=(6.125, 6.125/4*2))
     plt.suptitle('Bestimmung des Drucks im Düsenhals')
-    plt.subplot(1, 2, 1)
+    plt.subplot(2, 2, 1)
     plt.plot(pp_list_2, pt_list_qne, label="Iteration mit Q_NE")
     plt.plot(pp_list_2, pt_list, label="Iteration ohne Q_NE")
     plt.plot(pp_list_2, pt_list_correlation, label="Korrelation nach Zhu")
@@ -778,12 +792,21 @@ def p_throat_iteration():
     plt.ylabel('Druck im Düsenhals in MPa')
     plt.legend()
 
-    plt.subplot(1, 2, 2)
+    plt.subplot(2, 2, 2)
     plt.plot(pp_list_2, rel_fehler_qne, label="Iteration mit Q_NE")
     plt.plot(pp_list_2, rel_fehler_no_qne, label="Iteration ohne Q_NE")
     plt.xlabel('Primärdruck in MPa')
     plt.ylabel('Relativer Fehler in %')
     #plt.legend()
+
+    plt.subplot(2, 2, 3)
+    plt.plot(pp_list_2, vt_list_qne, label="Iteration mit Q_NE")
+    plt.plot(pp_list_2, vt_list, label="Iteration ohne Q_NE")
+    plt.plot(pp_list_2, vt_list_correlation, label="Korrelation nach Zhu berechnet mit GL1")
+    plt.plot(pp_list_2, vt2_list_correlation, label="Korrelation nach Zhu berechnet mit Lund")
+    plt.xlabel('Primärdruck in MPa')
+    plt.ylabel('Geschwindigkeit im Düsenhals in m/s')
+    plt.legend()
 
     plt.show()
 
