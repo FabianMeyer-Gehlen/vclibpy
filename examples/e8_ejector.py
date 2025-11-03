@@ -320,7 +320,7 @@ def test_partial_derivation():
 
 def sound_speed_calculation():
 
-    p_throat = 4500000
+    p_throat = 4500000 # Pa
     q_list = numpy.linspace(0.0001, 0.9999, 100)
     c = []
     c_2 = []
@@ -413,7 +413,8 @@ def sound_speed_calculation():
     plt.plot(phi, c_3, label="CoolProp", linestyle='--')
     plt.plot(phi, c_attou_list, label="attou")
     plt.legend()
-    plt.xlabel('Quality')
+    plt.grid()
+    plt.xlabel('Quality (Volume fraction)')
     plt.ylabel('Speed of sound')
     plt.title('Speed of sound comparison')
 
@@ -423,7 +424,7 @@ def sound_speed_calculation():
     plt.plot(phi, term2, label="term 2")
     plt.plot(phi, numpy.divide(term2, term1), label="term 2 / term 1")
     plt.legend()
-    plt.xlabel('Quality')
+    plt.xlabel('Quality (Volume fraction)')
     plt.ylabel('Speed of sound difference')
     plt.title('Speed of sound difference')
 
@@ -542,9 +543,9 @@ def error_calculation_p_throat():
     mask = numpy.abs(data) < z_threshold
     ax.scatter(x[mask], y[mask], data[mask], color='red', s=10, label='z ≈ 0', zorder=10)
 
-    ax.set_xlabel('$p_\mathrm{p} in bar')
-    ax.set_ylabel('$p_\mathrm{t} in bar')
-    ax.set_zlabel('Relativer Fehler in \%')
+    ax.set_xlabel(r'$p_\mathrm{p} in bar')
+    ax.set_ylabel(r'$p_\mathrm{t} in bar')
+    ax.set_zlabel(r'Relativer Fehler in \%')
     plt.show()
 
     # # Create a 3D surface plot
@@ -668,7 +669,7 @@ def error_calculation_v_secondary_mixing():
     fig.colorbar(surface, ax=ax, shrink=.8, aspect=10)
 
     ax.set_xlabel('$p_3$ in bar')
-    ax.set_ylabel('$v_\mathrm{sm}$ in m/s')
+    ax.set_ylabel(r'$v_\mathrm{sm}$ in m/s')
     ax.set_zlabel('Relativer Fehler in %')
     plt.show()
 
