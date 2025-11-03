@@ -379,22 +379,7 @@ def sound_speed_calculation():
 
         # calculate speed of sound for two phase flow with correlation from Attou and Seynhaeve (1999)
         if isinstance(med_prop, CoolProp):
-            # only works in coolprop
-
-            # compute partial derivatives for enthalpy and specific volume and print equations with values
-            dh_dpq_v = med_prop.get_partial_derivative("H", "P", "q", state_throat_vapor)
-            dh_dpq_l = med_prop.get_partial_derivative("H", "P", "q", state_throat_liquid)
-            del_h = state_throat.q * dh_dpq_v + (1 - state_throat.q) * dh_dpq_l
-
-            dD_dpq_v = med_prop.get_partial_derivative("D", "P", "q", state_throat_vapor)
-            dD_dpq_l = med_prop.get_partial_derivative("D", "P", "q", state_throat_liquid)
-            term_v = state_throat.q * (-1.0) / state_throat_vapor.d**2 * dD_dpq_v
-            term_l = (1 - state_throat.q) * (-1.0) / state_throat_liquid.d**2 * dD_dpq_l
-            del_v = term_v + term_l
-
-            numerator = state_throat.v**2 * (state_throat_vapor.h - state_throat_liquid.h)
-            denominator = ((state_throat_vapor.v - state_throat_liquid.v) * (del_h - state_throat.v) - del_v * (state_throat_vapor.h - state_throat_liquid.h))
-            c_attou = (numerator / denominator) ** 0.5
+            c_attou = med_prop.get_two_phase_speed_of_sound(p_throat, q)
             c_attou_list.append(c_attou)
 
     print(med_prop.get_saturated_speed_of_sound(p_throat, False))
