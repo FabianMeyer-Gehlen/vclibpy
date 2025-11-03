@@ -417,6 +417,36 @@ def sound_speed_calculation():
     plt.show()
 
 
+def sound_speed_calculation_3d():
+    p_values = numpy.linspace(1e5, 10e6, 50)  # Pressure values from 0.1 MPa to 10 MPa
+    q_values = numpy.linspace(0.01, 0.99, 50)  # Quality values from 0.01 to 0.99
+
+    P, Q = numpy.meshgrid(p_values, q_values)
+    Z = numpy.full_like(P, numpy.nan, dtype=float)
+
+    for i in range(P.shape[0]):
+        for j in range(P.shape[1]):
+            p = float(P[i, j])
+            q = float(Q[i, j])
+            try:
+                # med_prop.get_two_phase_speed_of_sound erwartet (p, q) in SI (Pa, -)
+                Z[i, j] = med_prop.get_two_phase_speed_of_sound(p, q)
+            except Exception:
+                Z[i, j] = numpy.nan
+
+    # 3D-Plot (Druck in MPa für Achsenbeschriftung)
+    fig = plt.figure(figsize=(8, 6))
+    ax = fig.add_subplot(111, projection='3d')
+    surf = ax.plot_surface(Q, P / 1e6, Z, cmap='viridis', edgecolor='none')
+    fig.colorbar(surf, ax=ax, shrink=0.8, aspect=10)
+    ax.set_ylabel('p in MPa')
+    ax.set_xlabel('Quality q')
+    ax.set_zlabel('Speed of sound (m/s)')
+    plt.title('Two-phase speed of sound over p and q')
+    plt.tight_layout()
+    plt.show()
+
+
 def _compute_error(args):
     p_p, p_t = args
     # Ejector-Zustand setzen
