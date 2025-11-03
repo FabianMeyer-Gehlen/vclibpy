@@ -215,6 +215,19 @@ class MedProp(abc.ABC):
         """
         raise NotImplementedError
 
+    def get_two_phase_speed_of_sound(self, p: float, q: float) -> float:
+        """
+        Calculate the speed of sound in the two-phase region based on Attou and Seynhaeve 1999.
+
+        Parameters:
+            p (float): Pressure in Pa
+            q (float): Quality (between 0 and 1)
+
+        Returns:
+            float: Speed of sound in m/s
+        """
+        raise NotImplementedError
+
     def get_partial_derivative(self, numerator: str, denominator: str, constant: str, state: ThermodynamicState):
         """
         Return the chosen partial derivative at current Thermodynamic state

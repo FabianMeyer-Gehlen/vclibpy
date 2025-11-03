@@ -166,6 +166,28 @@ class CoolProp(MedProp):
         a = CoolPropInternal.PropsSI('A', 'P', p, 'Q', q, self.fluid_name)
         return a
 
+    def get_two_phase_speed_of_sound(self, p: float, q: float) -> float:
+        state_two_phase = self.calc_state("PQ", p, q)
+        state_vapor = self.calc_state("PQ", p, 1)
+        state_liquid = self.calc_state("PQ", p, 0)
+
+        # compute partial derivatives for enthalpy and specific volume
+        dh_dpq_v = self.get_partial_derivative("H", "P", "q", state_vapor)
+        dh_dpq_l = self.get_partial_derivative("H", "P", "q", state_liquid)
+        del_h = q * dh_dpq_v + (1 - q) * dh_dpq_l
+
+        dD_dpq_v = self.get_partial_derivative("D", "P", "q", state_vapor)
+        dD_dpq_l = self.get_partial_derivative("D", "P", "q", state_liquid)
+        term_v = q * (-1.0) / state_vapor.d ** 2 * dD_dpq_v
+        term_l = (1 - q) * (-1.0) / state_liquid.d ** 2 * dD_dpq_l
+        del_v = term_v + term_l
+
+        numerator = state_two_phase.v ** 2 * (state_vapor.h - state_liquid.h)
+        denominator = ((state_vapor.v - state_liquid.v) * (del_h - state_two_phase.v) - del_v * (
+                    state_vapor.h - state_liquid.h))
+        c_attou = (numerator / denominator) ** 0.5
+        return c_attou
+
     def get_partial_derivative(self, numerator: str, denominator: str, constant: str, state: ThermodynamicState, ):
         if {numerator, denominator, constant} - self._state_function_map.keys():
             raise ValueError("Invalid property name! Use one of: " + ", ".join(self._state_function_map.keys()))
