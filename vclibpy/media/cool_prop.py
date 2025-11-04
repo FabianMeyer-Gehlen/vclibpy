@@ -147,6 +147,26 @@ class CoolProp(MedProp):
     def get_molar_mass(self):
         return self.M
 
+    def get_speed_of_sound(self, state: ThermodynamicState) -> float:
+        """
+        Calculate the speed of sound for given thermodynamic state.
+
+        Parameters:
+            state (ThermodynamicState): Thermodynamic state
+
+        Returns:
+            a (float): Speed of sound in m/s
+        """
+        if 0 <= state.q <= 1:
+            raise ValueError("Speed of sound in two-phase region is not defined. Use get_saturated_speed_of_sound or get_two_phase_speed_of_sound methods.")
+        else:
+            if self.use_high_level_api:
+                a = CoolPropInternal.PropsSI('A', 'P', state.p, 'T', state.T, self.fluid_name)
+            else:
+                self._update_coolprop_heos("PT", state.p, state.T)
+                a = self._helmholtz_equation_of_state.speed_sound()
+        return a
+
     def get_saturated_speed_of_sound(self, p, vapor: bool):
         """
         Calculate the speed of sound for saturated points based on pressure and quality.

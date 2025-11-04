@@ -202,6 +202,19 @@ class MedProp(abc.ABC):
             cv=0.5 * (tr_pr_in.cv + tr_pr_out.cv),
             state=None)
 
+    def get_speed_of_sound(self, state: ThermodynamicState) -> float:
+        """
+        Calculate the speed of sound for a given thermodynamic state.
+        Only works for single phase states. For two-phase states use get_two_phase_speed_of_sound.
+
+        Parameters:
+            state (ThermodynamicState): The thermodynamic state.
+
+        Returns:
+            float: Speed of sound in m/s
+        """
+        raise NotImplementedError
+
     def get_saturated_speed_of_sound(self, p, vapor: bool) -> float:
         """
         Calculate the speed of sound for saturated points based on pressure and quality.
