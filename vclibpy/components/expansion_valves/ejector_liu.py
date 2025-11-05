@@ -78,7 +78,7 @@ class EjectorLiu(Ejector):
         # Calculation of the isentropic motive nozzle efficiency according to Liu and Grolls empirical correlation
         pi = p_motive / p_suction
         a = self.d_throat / self.d_mixing
-        eta_is_motive = -36.137 - 4.160*pi + 1.161*pi**2 - 0.106*pi**3 + 212.320*a - 355.359*a**2 + 196.035*a**3
+        eta_is_motive = -36.1367305 - 4.15962963*pi + 1.16131867*pi**2 - 0.106090279*pi**3 + 212.320405*a - 355.359177*a**2 + 196.035242*a**3
 
         # Plausibility check
         if not 0<= eta_is_motive <= 1:
@@ -86,7 +86,7 @@ class EjectorLiu(Ejector):
 
         # Initial guess for p_throat
         p_throat: list[float] = []
-        p_throat.append(p_suction + (p_motive-p_suction)*0.5)  #ToDo find better start value for p_throat
+        p_throat.append(p_suction + (p_motive-p_suction)*0.3)  #ToDo find better start value for p_throat
         p_throat.append(p_throat[0] * (1 + self.newton_step_size))
         rel_err = []  # relative error in percent
         num_iterations = 0  # Number of iterations
@@ -106,7 +106,7 @@ class EjectorLiu(Ejector):
                 # Calculate the enthalpy at the throat from isentropic efficiency
                 h_throat[i] = self.state_primary.h - eta_is_motive * (self.state_primary.h - self.med_prop.calc_state("PS", p_throat[i], self.state_primary.s).h)
                 # From this the velocity at the throat can be calculated using an energy balance
-                v_throat[i] = (2*( self.state_primary.h - h_throat[i]) )**0.5  # velocity at throat from energy balance
+                v_throat[i] = (2*(self.state_primary.h - h_throat[i]) )**0.5  # velocity at throat from energy balance
                 # Also the speed of sound can be calculated
                 q_throat[i] = self.med_prop.calc_state("PH", p_throat[i], h_throat[i]).q
                 if 0 <= q_throat[i] <= 1:
@@ -116,11 +116,9 @@ class EjectorLiu(Ejector):
 
             # Check the error between calculated velocity and speed of sound. If it is small enough we can calculate all needed values and end the iteration
             rel_err.append((v_throat[0] - c_throat[0])/c_throat[0]*100)
-            print(rel_err[-1], p_throat)
-            print(self.newton_relaxation_factor)
 
             # Calculate the residual for the Newton-Raphson method
-            res = v_throat[0] - c_throat[0]  # Ziel: res -> 0 (v == c)
+            res = v_throat[0] - c_throat[0]
             if 'prev_res' not in locals():
                 prev_res = res
 
