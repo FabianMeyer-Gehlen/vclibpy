@@ -9,6 +9,8 @@ class EjectorLiu(Ejector):
     """
     Ejector model according to Liu and Groll 2013:
     'Study of ejector efficiencies in refrigeration cycles'
+    Additional information on the model was gathered from the ARTI report:
+    'Recovery of throttling losses by a two-phase ejector in a vapor compression cycle' from Liu and Groll 2008
 
     Assumptions:
 
@@ -27,12 +29,14 @@ class EjectorLiu(Ejector):
     Args:
         d_throat (float): Diameter of the motive nozzle throat in mm (has to be between 1.8 and 2.7 mm for empirical correlations to work).
         d_mixing (float): Diameter of the mixing chamber in mm (has to be 4 mm for empirical correlations to work).
+        dt_ds (float): Ratio of motive nozzle throat diameter to suction nozzle diameter (suggested value by Barta et al. 2021 is 0.33).
         **kwargs: Additional keyword arguments for the iteration.
     """
 
     def __init__(self,
                  d_throat: float = 1.8,
                  d_mixing: float = 4,
+                 dt_ds: float = 0.33,
                  **kwargs):
         """Initialize class with kwargs"""
         self.max_err = kwargs.pop("max_err", 0.005)
@@ -45,6 +49,7 @@ class EjectorLiu(Ejector):
         super().__init__()
         self.d_throat = d_throat
         self.d_mixing = d_mixing
+        self.dt_ds = dt_ds
 
 
     def calculate_motive_nozzle(self, p_motive: float, p_suction: float, h_motive: float):
@@ -143,3 +148,97 @@ class EjectorLiu(Ejector):
 
 
         #ToDO check for subcritical flow
+
+    def calculate_suction_nozzle(self, entrainment_ratio: float, p_suction: float, h_suction: float):
+        """
+        Calculate state and velocity inside suction nozzle
+
+        Returns:
+            None
+        """
+
+        # Set state at suction nozzle inlet from given parameters
+        self.state_secondary = self.med_prop.calc_state("PH", p_suction, h_suction)
+
+        # Calculate mass flow rate of secondary flow from entrainment ratio and primary mass flow rate
+        self.m_flow_secondary = entrainment_ratio * self.m_flow_primary
+
+        if not 2.5e6 <= p_suction <= 5e6:
+            raise ValueError(f"p_suction ({p_suction:.3f} Pa) out of range (2.5 MPa to 5 MPa). Unable to calculate suction nozzle efficiency using the correlation of Liu and Groll.")
+        if not 15 + 273.15 <= self.state_secondary.T <= 26 + 273.15:
+            raise ValueError(f"T_suction ({self.state_secondary.T-273.15:.3f} °C) out of range (15 °C to 26 °C). Unable to calculate suction nozzle efficiency using the correlation of Liu and Groll.")
+
+        # Calculation of the isentropic suction nozzle efficiency according to Liu and Grolls empirical correlation
+        pi = self.state_primary.p / p_suction
+        z = entrainment_ratio * pi**0.02
+        eta_is_suction = (-3173.171 + 934.102*pi - 314.4712*pi**2 + 79.52134*pi**3 - 12.22236*pi**4 + 0.814459*pi**5 +
+                          694222.1*entrainment_ratio - 2956145*entrainment_ratio**2 + 7950453*entrainment_ratio**3 - 11432720*entrainment_ratio**4 + 6689155*entrainment_ratio**5 -
+                          649905.1*z + 2647000*z**2 - 6885025*z**3 + 9627161*z**4 - 5490126*z**5)
+
+        # Plausibility check
+        if not 0<= eta_is_suction <= 1:
+              raise ValueError("eta_is_suction must be between 0 and 1")
+
+        # Initial guess for p_suction_exit
+        p_suction_exit: list[float] = []
+        p_suction_exit.append(p_suction * 0.995)  #ToDo find better start value for p_suction_exit
+        p_suction_exit.append(p_suction_exit[0] * (1 + self.newton_step_size))
+        rel_err = []  # relative error in percent
+        num_iterations = 0  # Number of iterations
+
+        d_s = self.d_throat / self.dt_ds  # Diameter of suction nozzle
+        A_s = np.pi * 1/4*(d_s*1e-3)**2  # Cross-sectional area of suction nozzle  #ToDO check with Barta if this is correct, oder if the area should be an annulus
+
+        while True:
+            num_iterations += 1
+            if num_iterations >= self.max_num_iterations:
+                raise RuntimeError("Maximum number of iterations for suction nozzle calculation exceeded. Stopping")
+
+            # arrays to store calculated values at suction nozzle exit for current pressure [0] and infinitesimal pressure step [1]
+            h_suction_exit: list[float] = [-1.0, -1.0]
+            v_suction_exit: list[float] = [-1.0, -1.0]
+            v_conservation_mass: list[float] = [-1.0, -1.0]
+
+            for i in range (0, 2):
+                # calculate enthalpy at suction nozzle exit from isentropic efficiency
+                h_suction_exit[i] = self.state_secondary.h - eta_is_suction * (self.state_secondary.h - self.med_prop.calc_state("PS", p_suction_exit[i], self.state_secondary.s).h)
+                # calculate velocity at suction nozzle exit from energy balance
+                v_suction_exit[i] = (2*(self.state_secondary.h - h_suction_exit[i]) )**0.5
+                # calculate velocity at suction nozzle exit from mass flow conservation
+                v_conservation_mass[i] = self.m_flow_secondary / (self.med_prop.calc_state("PH", p_suction_exit[i], h_suction_exit[i]).d * A_s)
+
+            rel_err.append((v_suction_exit[0] - v_conservation_mass[0])/v_conservation_mass[0]*100)
+
+            # Calculate the residual for the Newton-Raphson method
+            res = v_suction_exit[0] - v_conservation_mass[0]
+            if 'prev_res' not in locals():
+                prev_res = res
+
+            # Correcting the relaxation factor depending on the last step
+            if np.sign(res) != np.sign(prev_res) or abs(res) > abs(prev_res):  # If the sign of the residual changed or the error increased, reduce the relaxation factor to prevent oscillations
+                self.newton_relaxation_factor = max(0.1, self.newton_relaxation_factor * 0.8)
+            else:
+                self.newton_relaxation_factor = min(1.0, self.newton_relaxation_factor * 1.1)
+            prev_res = res
+
+            # Check if the error is small enough to stop the iteration
+            if abs(rel_err[-1]) < self.max_err:
+                self.state_secondary_mixing = self.med_prop.calc_state("PH", p_suction_exit[0], h_suction_exit[0])
+                if not 0.05 <= self.m_flow_secondary <= 0.07:
+                    raise ValueError(f"Calculated mass flow rate ({self.m_flow_secondary:.3f} kg/s) is outside of validity range for ejector model (0.05-0.07 kg/s). Check input parameters.")
+                break
+            else:  # If the error is still to large, the local differential can be calculated and the next pressure step determined
+                differential = ((v_suction_exit[1] - v_conservation_mass[1]) - (v_suction_exit[0] - v_conservation_mass[0])) / (p_suction_exit[1] - p_suction_exit[0])
+                p_step = (v_suction_exit[0] - v_conservation_mass[0]) / differential * self.newton_relaxation_factor
+
+                if abs(p_step) >= self.step_max:
+                    p_step = self.step_max * np.sign(p_step)
+
+                p_suction_exit[0] = p_suction_exit[0] - p_step
+
+                if p_suction_exit[0] >= self.state_secondary.p:
+                    p_suction_exit[0] = self.state_secondary.p * 0.995  # prevent non-physical pressure values
+                    self.newton_relaxation_factor *= 0.8  # reduce relaxation factor to prevent oscillations
+
+                p_suction_exit[1] = p_suction_exit[0] * (1 + self.newton_step_size)
+
