@@ -39,9 +39,9 @@ class EjectorLiu(Ejector):
         self.show_iteration = kwargs.get("show_iteration", False)
         self.use_quick_solver = kwargs.pop("use_quick_solver", True)
         self.max_num_iterations = kwargs.pop("max_num_iterations", int(1e5))
-        self.newton_relaxation_factor = kwargs.pop("newton_relaxation_factor", 0.8)
-        self.newton_step_size = kwargs.pop("newton_step_size", 1e-7)
-        self.step_max = kwargs.pop("step_max", 1000000)
+        self.newton_relaxation_factor = kwargs.pop("newton_relaxation_factor", 1.0)  # Starting value for the relaxation factor in the Newton-Raphson method
+        self.newton_step_size = kwargs.pop("newton_step_size", 1e-6)  # Relative step size for the numerical derivative in the Newton-Raphson method
+        self.step_max = kwargs.pop("step_max", 1000000)  # Maximum step size for pressure correction during Newton-Raphson method in Pa
         super().__init__()
         self.d_throat = d_throat
         self.d_mixing = d_mixing
@@ -55,19 +55,20 @@ class EjectorLiu(Ejector):
             None
         """
 
+        # Set state at motive nozzle inlet from given parameters
+        self.state_primary = self.med_prop.calc_state("PH", p_motive, h_motive)
 
         # Check if given parameters are in the valid range for the empirical correlations
         if not 8e6 <= p_motive <= 14e6:
             raise ValueError(f"p_motive ({p_motive:.3f} Pa) out of range (8 MPa to 14 MPa). Unable to calculate motive nozzle efficiency using the correlation of Liu and Groll.")
         if not 2.5e6 <= p_suction <= 5e6:
             raise ValueError(f"p_suction ({p_suction:.3f} Pa) out of range (2.5 MPa to 5 MPa). Unable to calculate motive nozzle efficiency using the correlation of Liu and Groll.")
+        if not 40 + 273.15 <= self.state_primary.T <= 60 + 273.15:
+            raise ValueError(f"T_motive ({self.state_primary.T-273.15:.3f} °C) out of range (40 °C to 60 °C). Unable to calculate motive nozzle efficiency using the correlation of Liu and Groll.")
         if not 1.8 <= self.d_throat <= 2.7:
             raise ValueError(f"d_throat ({self.d_throat:.3f} mm) out of range (1.8 mm to 2.7 mm). Unable to calculate motive nozzle efficiency using the correlation of Liu and Groll.")
         if not self.d_mixing == 4:
             raise ValueError(f"d_mixing ({self.d_mixing:.3f} mm) has to be 4 mm. Unable to calculate motive nozzle efficiency using the correlation of Liu and Groll.")
-
-        # Set state at motive nozzle inlet from given parameters
-        self.state_primary = self.med_prop.calc_state("PH", p_motive, h_motive)
 
         # Calculation of the isentropic motive nozzle efficiency according to Liu and Grolls empirical correlation
         pi = p_motive / p_suction
@@ -79,7 +80,9 @@ class EjectorLiu(Ejector):
            raise ValueError("eta_is_motive must be between 0 and 1")
 
         # Initial guess for p_throat
-        p_throat = p_suction + (p_motive-p_suction)*0.2  #ToDo find better start value for p_throat
+        p_throat: list[float] = []
+        p_throat.append(p_suction + (p_motive-p_suction)*0.5)  #ToDo find better start value for p_throat
+        p_throat.append(p_throat[0] * (1 + self.newton_step_size))
         rel_err = []  # relative error in percent
         num_iterations = 0  # Number of iterations
 
@@ -88,48 +91,55 @@ class EjectorLiu(Ejector):
             if num_iterations >= self.max_num_iterations:
                 raise RuntimeError("Maximum number of iterations for motive nozzle calculation exceeded. Stopping")
 
-            # Calculate the enthalpy at the throat from isentropic efficiency
-            h_throat = self.state_primary.h - eta_is_motive * (self.state_primary.h - self.med_prop.calc_state("PS", p_throat, self.state_primary.s).h)
-            # From this the velocity at the throat can be calculated using an energy balance
-            v_throat = (2*( self.state_primary.h - h_throat) )**0.5  # velocity at throat from energy balance
-            # Also the speed of sound can be calculated
-            q_throat = self.med_prop.calc_state("PH", p_throat, h_throat).q
-            if 0 <= q_throat <= 1:
-                c_throat = self.med_prop.get_two_phase_speed_of_sound(p_throat, q_throat)  # speed of sound at throat
-            else:
-                c_throat = self.med_prop.get_speed_of_sound(self.med_prop.calc_state("PH", p_throat, h_throat))  # speed of sound at throat
+            # arrays to store calculated values at throat for current pressure [0] and infinitesimal pressure step [1]
+            h_throat: list[float] = [-1.0, -1.0]
+            v_throat: list[float] = [-1.0, -1.0]
+            q_throat: list[float] = [-1.0, -1.0]
+            c_throat: list[float] = [-1.0, -1.0]
+
+            for i in range (0, 2):
+                # Calculate the enthalpy at the throat from isentropic efficiency
+                h_throat[i] = self.state_primary.h - eta_is_motive * (self.state_primary.h - self.med_prop.calc_state("PS", p_throat[i], self.state_primary.s).h)
+                # From this the velocity at the throat can be calculated using an energy balance
+                v_throat[i] = (2*( self.state_primary.h - h_throat[i]) )**0.5  # velocity at throat from energy balance
+                # Also the speed of sound can be calculated
+                q_throat[i] = self.med_prop.calc_state("PH", p_throat[i], h_throat[i]).q
+                if 0 <= q_throat[i] <= 1:
+                    c_throat[i] = self.med_prop.get_two_phase_speed_of_sound(p_throat[i], q_throat[i])  # speed of sound at throat
+                else:
+                    c_throat[i] = self.med_prop.get_speed_of_sound(self.med_prop.calc_state("PH", p_throat[i], h_throat[i]))  # speed of sound at throat
 
             # Check the error between calculated velocity and speed of sound. If it is small enough we can calculate all needed values and end the iteration
-            rel_err.append((v_throat - c_throat)/c_throat*100)
-            print(f"relative error: {rel_err[-1]}, p_throat: {p_throat}")
+            rel_err.append((v_throat[0] - c_throat[0])/c_throat[0]*100)
+            print(rel_err[-1], p_throat)
+            print(self.newton_relaxation_factor)
+
+            # Calculate the residual for the Newton-Raphson method
+            res = v_throat[0] - c_throat[0]  # Ziel: res -> 0 (v == c)
+            if 'prev_res' not in locals():
+                prev_res = res
+
+            # Correcting the relaxation factor depending on the last step
+            if np.sign(res) != np.sign(prev_res) or abs(res) > abs(prev_res):  # If the sign of the residual changed or the error increased, reduce the relaxation factor to prevent oscillations
+                self.newton_relaxation_factor = max(0.1, self.newton_relaxation_factor * 0.8)
+            else:
+                self.newton_relaxation_factor = min(1.0, self.newton_relaxation_factor * 1.1)
+            prev_res = res
+
+            # Check if the error is small enough to stop the iteration
             if abs(rel_err[-1]) < self.max_err:
-                self.state_primary_throat = self.med_prop.calc_state("PH", p_throat, h_throat)
-                self.m_flow_primary = self.state_primary_throat.d * 1/4*self.d_throat**2 * v_throat
+                self.state_primary_throat = self.med_prop.calc_state("PH", p_throat[0], h_throat[0])
+                self.m_flow_primary = self.state_primary_throat.d * np.pi * 1/4*(self.d_throat*1e-3)**2 * v_throat[0]
+                if not 0.1 <= self.m_flow_primary <= 0.25:
+                    raise ValueError(f"Calculated mass flow rate ({self.m_flow_primary:.3f} kg/s) is outside of validity range for ejector model (0.1-0.5 kg/s). Check input parameters.")
                 break
-            else:  # the same can be done again to calculate the local derivative for Newton's method
-                p_throat_2 = p_throat * (1 + self.newton_step_size)
-                h_throat_2 = self.state_primary.h - eta_is_motive * (self.state_primary.h - self.med_prop.calc_state("PS", p_throat_2, self.state_primary.s).h)
-                v_throat_2 = (2 * (self.state_primary.h - h_throat_2)) ** 0.5
-                q_throat_2 = self.med_prop.calc_state("PH", p_throat_2, h_throat_2).q
-                if 0 <= q_throat_2 <= 1:
-                    c_throat_2 = self.med_prop.get_two_phase_speed_of_sound(p_throat_2, q_throat_2)
-                else:
-                    c_throat_2 = self.med_prop.get_speed_of_sound(self.med_prop.calc_state("PH", p_throat_2, h_throat_2))
-
-                # Now the local differential can be calculated and the next pressure step determined
-                # Now the local differential can be calculated and the next pressure step determined
-                differential = ((v_throat_2 - c_throat_2) - (v_throat - c_throat)) / (p_throat_2 - p_throat)
-
-                # Ausgabe der Formel mit aktuellen Werten
-                print(f"differential = ((v_throat_2 - c_throat_2) - (v_throat - c_throat)) / (p_throat_2 - p_throat)")
-                print(f" = (({v_throat_2:.6f} - {c_throat_2:.6f}) - ({v_throat:.6f} - {c_throat:.6f})) / ({p_throat_2:.6f} - {p_throat:.6f}) = {differential:.6e}")
-
-                p_step = (v_throat - c_throat) / differential * self.newton_relaxation_factor
-                print(f"p_step: {p_step}")
+            else:  # If the error is still to large, the local differential can be calculated and the next pressure step determined
+                differential = ((v_throat[1] - c_throat[1]) - (v_throat[0] - c_throat[0])) / (p_throat[1] - p_throat[0])
+                p_step = (v_throat[0] - c_throat[0]) / differential * self.newton_relaxation_factor
                 if abs(p_step) >= self.step_max:
                     p_step = self.step_max * np.sign(p_step)
-                p_throat = p_throat - p_step
+                p_throat[0] = p_throat[0] - p_step
+                p_throat[1] = p_throat[0] * (1 + self.newton_step_size)
 
 
         #ToDO check for subcritical flow
-        #ToDO check for boundaries of eta_motive at the end to verify applicability of the correlation (m flows)
