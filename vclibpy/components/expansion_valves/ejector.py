@@ -37,32 +37,32 @@ class Ejector(ThreePortComponent, abc.ABC):
         """
         raise NotImplementedError
 
-    @abc.abstractmethod
-    def calculate_suction_nozzle(self):
-        """
-        Calculate mass flow and state inside suction nozzle
+    # @abc.abstractmethod
+    # def calculate_suction_nozzle(self):
+    #     """
+    #     Calculate mass flow and state inside suction nozzle
+    #
+    #     Returns:
+    #         None
+    #     """
+    #     raise NotImplementedError
 
-        Returns:
-            None
-        """
-        raise NotImplementedError
-
-    @abc.abstractmethod
-    def calculate_mixing_chamber(self):
-        """
-        Calculate mass flow and state inside mixing chamber
-
-        Returns:
-            None
-        """
-        raise NotImplementedError
-
-    @abc.abstractmethod
-    def calculate_diffusor(self):
-        """
-        Calculate state inside diffusor
-
-        Returns:
-            None
-        """
-        raise NotImplementedError
+    # @abc.abstractmethod
+    # def calculate_mixing_chamber(self):
+    #     """
+    #     Calculate mass flow and state inside mixing chamber
+    #
+    #     Returns:
+    #         None
+    #     """
+    #     raise NotImplementedError
+    #
+    # @abc.abstractmethod
+    # def calculate_diffusor(self):
+    #     """
+    #     Calculate state inside diffusor
+    #
+    #     Returns:
+    #         None
+    #     """
+    #     raise NotImplementedError

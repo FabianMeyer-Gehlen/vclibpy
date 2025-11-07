@@ -1,9 +1,12 @@
 """
 Module with semi-physical ejector model according to Liu and Groll 2013
 """
+from scipy.stats import false_discovery_control
+
 from vclibpy.components.expansion_valves.ejector import Ejector
 import numpy as np
 from scipy.optimize import fsolve
+import matplotlib.pyplot as plt
 
 class EjectorLiu(Ejector):
     """
@@ -240,3 +243,82 @@ class EjectorLiu(Ejector):
 
                 p_suction_exit[1] = p_suction_exit[0] * (1 + self.newton_step_size)
 
+
+    def calculate_mixing_chamber(self, entrainment_ratio: float):
+        """
+        Calculate state inside mixing chamber
+
+        Returns:
+            None
+        """
+
+        #  Calculation of mixing chamber efficiency according to Liu and Grolls empirical correlation
+        z = (self.d_throat/self.d_mixing)**0.1 * (1+entrainment_ratio)**0.35
+        eta_mixing = -6869.077 + 19308.18*z - 18089.31*z**2 + 5649.417*z**3
+
+        # Total mass flow at mixing chamber and diffusor
+        self.m_flow_outlet = self.m_flow_primary + self.m_flow_secondary
+
+        A_mix = np.pi * 1/4*(self.d_mixing*1e-3)**2  # Cross-sectional area of mixing chamber
+        A_throat = np.pi * 1/4*(self.d_throat*1e-3)**2  # Cross-sectional area of motive nozzle throat
+        d_suction = self.d_throat / self.dt_ds  # Diameter of suction nozzle
+        A_suction = np.pi * 1 / 4 * (d_suction * 1e-3) ** 2  # Cross-sectional area of suction nozzle  #ToDO check with Barta if this is correct, oder if the area should be an annulus
+
+        v_throat = self.m_flow_primary / (self.state_primary_throat.d * A_throat)  # Velocity at motive nozzle throat
+        v_suction = self.m_flow_secondary / (self.state_secondary_mixing.d * A_suction)  # Velocity at suction nozzle exit / mixing chamber inlet
+
+        # Initial guess for mixing chamber pressure
+        p_mix: list[float] = [-1.0, -1.0]
+        p_mix[0] = self.state_secondary_mixing.p + (self.state_primary_throat.p - self.state_secondary_mixing.p)*(0.11-0.1*entrainment_ratio)  #ToDO find better start value for p_mix
+        p_mix[1] = p_mix[0] * (1 + self.newton_step_size)
+        err: list[tuple[float, float, float]] = []  # relative error in percent
+        var: list[tuple[float, float, float]] = []  # store variables for each iteration
+        num_iterations = 0  # Number of iterations
+
+        def equations(vars):
+            p_mix, v_mix, h_mix = vars
+            print(vars)
+
+            rho_mix = self.med_prop.calc_state("PH", p_mix, h_mix).d
+
+            eq1 = ((self.m_flow_primary + self.m_flow_secondary - rho_mix * A_mix * v_mix)/self.m_flow_primary)  # Mass conservation
+            eq2 = ((self.state_primary_throat.p*A_throat + eta_mixing*self.m_flow_primary*v_throat +
+                   self.state_secondary_mixing.p*(A_mix-A_throat) + eta_mixing*self.state_secondary_mixing.d*(A_mix-A_throat)*v_suction**2 -
+                   p_mix*A_mix - rho_mix*A_mix*v_mix**2) / (self.state_primary_throat.p*A_throat + eta_mixing*self.m_flow_primary*v_throat))  # Momentum conservation
+            eq3 = ((self.m_flow_primary*(self.state_primary_throat.h + 0.5*v_throat**2) +
+                   self.m_flow_secondary*(self.state_secondary_mixing.h + 0.5*v_suction**2) -
+                   self.m_flow_outlet*(h_mix + 0.5*v_mix**2)) / (self.m_flow_primary*(self.state_primary_throat.h + 0.5*v_throat**2)))  # Energy conservation
+            print (eq1, eq2, eq3)
+            err.append((eq1, eq2, eq3))
+            var.append((p_mix, v_mix, h_mix))
+            return [eq1, eq2, eq3]
+
+
+
+        initial_guess = [p_mix[0], 50.0, 350000.0]  # Initial guess for p_mix, v_mix, h_mix
+        solution = fsolve(equations, initial_guess, full_output=True)
+        p_mix_solution, v_mix_solution, h_mix_solution = solution[0]
+        print (solution)
+        # self.state_mixing = self.med_prop.calc_state("PH", p_mix_solution, h_mix_solution)
+
+        errs = np.array(err)
+        vars_arr = np.array(var)
+
+        fig, axs = plt.subplots(4, 1, figsize=(8, 6))
+
+        axs[0].plot(errs[:, 0], label="eq1")
+        axs[0].plot(errs[:, 1], label="eq2")
+        axs[0].plot(errs[:, 2], label="eq3")
+        axs[0].set_xlabel("Iteration")
+        axs[0].set_ylabel("Relativer Fehler")
+
+        axs[1].plot(vars_arr[:, 0], label="p_mix")
+        axs[2].plot(vars_arr[:, 1], label="v_mix")
+        axs[3].plot(vars_arr[:, 2], label="h_mix")
+        axs[3].set_xlabel("Iteration")
+        for ax in axs:
+            ax.legend()
+
+        plt.tight_layout()
+
+        plt.show()
