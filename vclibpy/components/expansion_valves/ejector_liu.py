@@ -267,7 +267,7 @@ class EjectorLiu(Ejector):
         A_mix = np.pi * 1/4*(self.d_mixing*1e-3)**2  # Cross-sectional area of mixing chamber
         A_throat = np.pi * 1/4*(self.d_throat*1e-3)**2  # Cross-sectional area of motive nozzle throat
         d_suction = self.d_throat / self.dt_ds  # Diameter of suction nozzle
-        A_suction = np.pi * 1 / 4 * (d_suction * 1e-3) ** 2  # Cross-sectional area of suction nozzle  #ToDO check with Barta if this is correct, oder if the area should be an annulus
+        A_suction = A_mix - A_throat  # Cross-sectional area of suction nozzle  #ToDO check with Barta if this is correct, oder if the area should be an annulus
 
         v_throat = self.m_flow_primary / (self.state_primary_throat.d * A_throat)  # Velocity at motive nozzle throat
         v_suction = self.m_flow_secondary / (self.state_secondary_mixing.d * A_suction)  # Velocity at suction nozzle exit / mixing chamber inlet
@@ -303,6 +303,71 @@ class EjectorLiu(Ejector):
             rel_err.append((eq1, eq2, eq3))
             var.append((p_mix, h_mix, v_mix))
 
+            p_mix *= (1 + self.newton_step_size)
+            rho_mix = self.med_prop.calc_state("PH", p_mix, h_mix).d
+
+            eq1 = ((self.m_flow_primary + self.m_flow_secondary - rho_mix * A_mix * v_mix) / self.m_flow_primary)  # Mass conservation
+            eq2 = ((self.state_primary_throat.p * A_throat + eta_mixing * self.m_flow_primary * v_throat +
+                    self.state_secondary_mixing.p * (A_mix - A_throat) +
+                    eta_mixing * self.state_secondary_mixing.d * (A_mix - A_throat) * v_suction ** 2 -
+                    p_mix * A_mix - rho_mix * A_mix * v_mix ** 2) /
+                   (self.state_primary_throat.p * A_throat + eta_mixing * self.m_flow_primary * v_throat))  # Momentum conservation
+            eq3 = ((self.m_flow_primary * (self.state_primary_throat.h + 0.5 * v_throat ** 2) +
+                    self.m_flow_secondary * (self.state_secondary_mixing.h + 0.5 * v_suction ** 2) -
+                    self.m_flow_outlet * (h_mix + 0.5 * v_mix ** 2)) /
+                   (self.m_flow_primary * (self.state_primary_throat.h + 0.5 * v_throat ** 2)))  # Energy conservation
+
+            rel_err.append((eq1, eq2, eq3))
+            var.append((p_mix, h_mix, v_mix))
+
+            print((rel_err[-1][0] - rel_err[-2][0])/(var[-2][0]*self.newton_step_size))
+            print((rel_err[-1][1] - rel_err[-2][1])/(var[-2][0]*self.newton_step_size))
+            print((rel_err[-1][2] - rel_err[-2][2])/(var[-2][0]*self.newton_step_size))
+
+            p_mix = var[-2][0]  # reset p_mix
+            h_mix *= (1 + self.newton_step_size)
+            rho_mix = self.med_prop.calc_state("PH", p_mix, h_mix).d
+
+            eq1 = ((self.m_flow_primary + self.m_flow_secondary - rho_mix * A_mix * v_mix) / self.m_flow_primary)  # Mass conservation
+            eq2 = ((self.state_primary_throat.p * A_throat + eta_mixing * self.m_flow_primary * v_throat +
+                    self.state_secondary_mixing.p * (A_mix - A_throat) +
+                    eta_mixing * self.state_secondary_mixing.d * (A_mix - A_throat) * v_suction ** 2 -
+                    p_mix * A_mix - rho_mix * A_mix * v_mix ** 2) /
+                   (self.state_primary_throat.p * A_throat + eta_mixing * self.m_flow_primary * v_throat))  # Momentum conservation
+            eq3 = ((self.m_flow_primary * (self.state_primary_throat.h + 0.5 * v_throat ** 2) +
+                    self.m_flow_secondary * (self.state_secondary_mixing.h + 0.5 * v_suction ** 2) -
+                    self.m_flow_outlet * (h_mix + 0.5 * v_mix ** 2)) /
+                   (self.m_flow_primary * (self.state_primary_throat.h + 0.5 * v_throat ** 2)))  # Energy conservation
+
+            rel_err.append((eq1, eq2, eq3))
+            var.append((p_mix, h_mix, v_mix))
+
+            print((rel_err[-1][0] - rel_err[-3][0]) / (var[-2][1] * self.newton_step_size))
+            print((rel_err[-1][1] - rel_err[-3][1]) / (var[-2][1] * self.newton_step_size))
+            print((rel_err[-1][2] - rel_err[-3][2]) / (var[-2][1] * self.newton_step_size))
+
+            h_mix = var[-2][1]  # reset h_mix
+            v_mix *= (1 + self.newton_step_size)
+            rho_mix = self.med_prop.calc_state("PH", p_mix, h_mix).d
+
+            eq1 = ((self.m_flow_primary + self.m_flow_secondary - rho_mix * A_mix * v_mix) / self.m_flow_primary)  # Mass conservation
+            eq2 = ((self.state_primary_throat.p * A_throat + eta_mixing * self.m_flow_primary * v_throat +
+                    self.state_secondary_mixing.p * (A_mix - A_throat) +
+                    eta_mixing * self.state_secondary_mixing.d * (A_mix - A_throat) * v_suction ** 2 -
+                    p_mix * A_mix - rho_mix * A_mix * v_mix ** 2) /
+                   (self.state_primary_throat.p * A_throat + eta_mixing * self.m_flow_primary * v_throat))  # Momentum conservation
+            eq3 = ((self.m_flow_primary * (self.state_primary_throat.h + 0.5 * v_throat ** 2) +
+                    self.m_flow_secondary * (self.state_secondary_mixing.h + 0.5 * v_suction ** 2) -
+                    self.m_flow_outlet * (h_mix + 0.5 * v_mix ** 2)) /
+                   (self.m_flow_primary * (self.state_primary_throat.h + 0.5 * v_throat ** 2)))  # Energy conservation
+
+            rel_err.append((eq1, eq2, eq3))
+            var.append((p_mix, h_mix, v_mix))
+
+            print((rel_err[-1][0] - rel_err[-4][0]) / (var[-2][2] * self.newton_step_size))
+            print((rel_err[-1][1] - rel_err[-4][1]) / (var[-2][2] * self.newton_step_size))
+            print((rel_err[-1][2] - rel_err[-4][2]) / (var[-2][2] * self.newton_step_size))
+
             if max(abs(x) for x in rel_err[-1]) <= self.max_err:
                 self.state_mixing = self.med_prop.calc_state("PH", p_mix, h_mix)
                 break
@@ -311,15 +376,15 @@ class EjectorLiu(Ejector):
             jacobian: list[list] = [[], [], []]
             drho_dp = self.med_prop.get_partial_derivative("D", "P", "H", state_current)
             drho_dh = self.med_prop.get_partial_derivative("D", "H", "P", state_current)
-            dmass_dp = -A_mix * v_mix * drho_dp
-            dmass_dh = -A_mix * v_mix * drho_dh
-            dmass_dv = -A_mix * state_current.d
-            dimpulse_dp = -A_mix * (1 + v_mix ** 2 * drho_dp)
-            dimpulse_dh = -A_mix * v_mix ** 2 * drho_dh
-            dimpulse_dv = -2 * A_mix * state_current.d * v_mix
+            dmass_dp = -A_mix * v_mix * drho_dp / self.m_flow_primary
+            dmass_dh = -A_mix * v_mix * drho_dh / self.m_flow_primary
+            dmass_dv = -A_mix * state_current.d / self.m_flow_primary
+            dimpulse_dp = -A_mix * (1 + v_mix ** 2 * drho_dp) / (self.state_primary_throat.p * A_throat + eta_mixing * self.m_flow_primary * v_throat)
+            dimpulse_dh = -A_mix * v_mix ** 2 * drho_dh / (self.state_primary_throat.p * A_throat + eta_mixing * self.m_flow_primary * v_throat)
+            dimpulse_dv = -2 * A_mix * state_current.d * v_mix / (self.state_primary_throat.p * A_throat + eta_mixing * self.m_flow_primary * v_throat)
             denergy_dp = 0
-            denergy_dh = -self.m_flow_outlet
-            denergy_dv = -self.m_flow_outlet * v_mix
+            denergy_dh = -self.m_flow_outlet / (self.m_flow_primary * (self.state_primary_throat.h + 0.5 * v_throat ** 2))
+            denergy_dv = -self.m_flow_outlet * v_mix / (self.m_flow_primary * (self.state_primary_throat.h + 0.5 * v_throat ** 2))
 
             jacobian[0] = [dmass_dp, dmass_dh, dmass_dv]
             jacobian[1] = [dimpulse_dp, dimpulse_dh, dimpulse_dv]
