@@ -46,7 +46,7 @@ class EjectorLiu(Ejector):
         self.show_iteration = kwargs.get("show_iteration", False)
         self.use_quick_solver = kwargs.pop("use_quick_solver", True)
         self.max_num_iterations = kwargs.pop("max_num_iterations", int(1e5))
-        self.newton_relaxation_factor = kwargs.pop("newton_relaxation_factor", 1.0)  # Starting value for the relaxation factor in the Newton-Raphson method
+        self.newton_relaxation_factor = kwargs.pop("newton_relaxation_factor", 1)  # Starting value for the relaxation factor in the Newton-Raphson method
         self.newton_step_size = kwargs.pop("newton_step_size", 1e-6)  # Relative step size for the numerical derivative in the Newton-Raphson method
         self.step_max = kwargs.pop("step_max", 1000000)  # Maximum step size for pressure correction during Newton-Raphson method in Pa
         super().__init__()
@@ -65,6 +65,7 @@ class EjectorLiu(Ejector):
 
         # Set state at motive nozzle inlet from given parameters
         self.state_primary = self.med_prop.calc_state("PH", p_motive, h_motive)
+        newton_relaxation_factor = self.newton_relaxation_factor  # Reset relaxation factor for Newton-Raphson method
 
         # Check if given parameters are in the valid range for the empirical correlations
         if not 8e6 <= p_motive <= 14e6:
@@ -127,9 +128,9 @@ class EjectorLiu(Ejector):
 
             # Correcting the relaxation factor depending on the last step
             if np.sign(res) != np.sign(prev_res) or abs(res) > abs(prev_res):  # If the sign of the residual changed or the error increased, reduce the relaxation factor to prevent oscillations
-                self.newton_relaxation_factor = max(0.1, self.newton_relaxation_factor * 0.8)
+                newton_relaxation_factor = max(0.1, newton_relaxation_factor * 0.8)
             else:
-                self.newton_relaxation_factor = min(1.0, self.newton_relaxation_factor * 1.1)
+                newton_relaxation_factor = min(1.0, newton_relaxation_factor * 1.1)
             prev_res = res
 
             # Check if the error is small enough to stop the iteration
@@ -141,7 +142,7 @@ class EjectorLiu(Ejector):
                 break
             else:  # If the error is still to large, the local differential can be calculated and the next pressure step determined
                 differential = ((v_throat[1] - c_throat[1]) - (v_throat[0] - c_throat[0])) / (p_throat[1] - p_throat[0])
-                p_step = (v_throat[0] - c_throat[0]) / differential * self.newton_relaxation_factor
+                p_step = (v_throat[0] - c_throat[0]) / differential * newton_relaxation_factor
                 if abs(p_step) >= self.step_max:
                     p_step = self.step_max * np.sign(p_step)
                 p_throat[0] = p_throat[0] - p_step
@@ -160,6 +161,8 @@ class EjectorLiu(Ejector):
 
         # Set state at suction nozzle inlet from given parameters
         self.state_secondary = self.med_prop.calc_state("PH", p_suction, h_suction)
+
+        newton_relaxation_factor = self.newton_relaxation_factor  # Reset relaxation factor for Newton-Raphson method
 
         # Calculate mass flow rate of secondary flow from entrainment ratio and primary mass flow rate
         self.m_flow_secondary = entrainment_ratio * self.m_flow_primary
@@ -217,9 +220,9 @@ class EjectorLiu(Ejector):
 
             # Correcting the relaxation factor depending on the last step
             if np.sign(res) != np.sign(prev_res) or abs(res) > abs(prev_res):  # If the sign of the residual changed or the error increased, reduce the relaxation factor to prevent oscillations
-                self.newton_relaxation_factor = max(0.1, self.newton_relaxation_factor * 0.8)
+                newton_relaxation_factor = max(0.1, newton_relaxation_factor * 0.8)
             else:
-                self.newton_relaxation_factor = min(1.0, self.newton_relaxation_factor * 1.1)
+                newton_relaxation_factor = min(1.0, newton_relaxation_factor * 1.1)
             prev_res = res
 
             # Check if the error is small enough to stop the iteration
@@ -230,7 +233,7 @@ class EjectorLiu(Ejector):
                 break
             else:  # If the error is still to large, the local differential can be calculated and the next pressure step determined
                 differential = ((v_suction_exit[1] - v_conservation_mass[1]) - (v_suction_exit[0] - v_conservation_mass[0])) / (p_suction_exit[1] - p_suction_exit[0])
-                p_step = (v_suction_exit[0] - v_conservation_mass[0]) / differential * self.newton_relaxation_factor
+                p_step = (v_suction_exit[0] - v_conservation_mass[0]) / differential * newton_relaxation_factor
 
                 if abs(p_step) >= self.step_max:
                     p_step = self.step_max * np.sign(p_step)
@@ -239,7 +242,7 @@ class EjectorLiu(Ejector):
 
                 if p_suction_exit[0] >= self.state_secondary.p:
                     p_suction_exit[0] = self.state_secondary.p * 0.995  # prevent non-physical pressure values
-                    self.newton_relaxation_factor *= 0.8  # reduce relaxation factor to prevent oscillations
+                    newton_relaxation_factor *= 0.8  # reduce relaxation factor to prevent oscillations
 
                 p_suction_exit[1] = p_suction_exit[0] * (1 + self.newton_step_size)
 
@@ -256,6 +259,8 @@ class EjectorLiu(Ejector):
         z = (self.d_throat/self.d_mixing)**0.1 * (1+entrainment_ratio)**0.35
         eta_mixing = -6869.077 + 19308.18*z - 18089.31*z**2 + 5649.417*z**3
 
+        newton_relaxation_factor = self.newton_relaxation_factor  # Reset relaxation factor for Newton-Raphson method
+
         # Total mass flow at mixing chamber and diffusor
         self.m_flow_outlet = self.m_flow_primary + self.m_flow_secondary
 
@@ -267,41 +272,90 @@ class EjectorLiu(Ejector):
         v_throat = self.m_flow_primary / (self.state_primary_throat.d * A_throat)  # Velocity at motive nozzle throat
         v_suction = self.m_flow_secondary / (self.state_secondary_mixing.d * A_suction)  # Velocity at suction nozzle exit / mixing chamber inlet
 
-        # Initial guess for mixing chamber pressure
-        p_mix: list[float] = [-1.0, -1.0]
-        p_mix[0] = self.state_secondary_mixing.p + (self.state_primary_throat.p - self.state_secondary_mixing.p)*(0.11-0.1*entrainment_ratio)  #ToDO find better start value for p_mix
-        p_mix[1] = p_mix[0] * (1 + self.newton_step_size)
-        err: list[tuple[float, float, float]] = []  # relative error in percent
+        rel_err: list[tuple[float, float, float]] = []  # relative error in percent
         var: list[tuple[float, float, float]] = []  # store variables for each iteration
         num_iterations = 0  # Number of iterations
 
-        def equations(vars):
-            p_mix, v_mix, h_mix = vars
-            print(vars)
+        p_mix = (self.state_primary.p + self.state_secondary.p) / 2  # Starting value for mixing chamber pressure
+        h_mix = 3e5  # Starting value for mixing chamber enthalpy
+        v_mix = (v_throat + v_suction) / 2  # Starting value for mixing chamber velocity
+
+        while True:
+            num_iterations += 1
+            print(f"Iteration {num_iterations}: p_mix={p_mix:.2f} Pa, h_mix={h_mix:.2f} J/kg, v_mix={v_mix:.2f} m/s")
+            if num_iterations >= self.max_num_iterations:
+                raise RuntimeError("Maximum number of iterations for mixing chamber calculation exceeded. Stopping")
 
             rho_mix = self.med_prop.calc_state("PH", p_mix, h_mix).d
 
-            eq1 = ((self.m_flow_primary + self.m_flow_secondary - rho_mix * A_mix * v_mix)/self.m_flow_primary)  # Mass conservation
-            eq2 = ((self.state_primary_throat.p*A_throat + eta_mixing*self.m_flow_primary*v_throat +
-                   self.state_secondary_mixing.p*(A_mix-A_throat) + eta_mixing*self.state_secondary_mixing.d*(A_mix-A_throat)*v_suction**2 -
-                   p_mix*A_mix - rho_mix*A_mix*v_mix**2) / (self.state_primary_throat.p*A_throat + eta_mixing*self.m_flow_primary*v_throat))  # Momentum conservation
-            eq3 = ((self.m_flow_primary*(self.state_primary_throat.h + 0.5*v_throat**2) +
-                   self.m_flow_secondary*(self.state_secondary_mixing.h + 0.5*v_suction**2) -
-                   self.m_flow_outlet*(h_mix + 0.5*v_mix**2)) / (self.m_flow_primary*(self.state_primary_throat.h + 0.5*v_throat**2)))  # Energy conservation
-            print (eq1, eq2, eq3)
-            err.append((eq1, eq2, eq3))
-            var.append((p_mix, v_mix, h_mix))
-            return [eq1, eq2, eq3]
+            eq1 = ((self.m_flow_primary + self.m_flow_secondary - rho_mix * A_mix * v_mix) / self.m_flow_primary)  # Mass conservation
+            eq2 = ((self.state_primary_throat.p * A_throat + eta_mixing * self.m_flow_primary * v_throat +
+                    self.state_secondary_mixing.p * (A_mix - A_throat) +
+                    eta_mixing * self.state_secondary_mixing.d * (A_mix - A_throat) * v_suction ** 2 -
+                    p_mix * A_mix - rho_mix * A_mix * v_mix ** 2) /
+                   (self.state_primary_throat.p * A_throat + eta_mixing * self.m_flow_primary * v_throat))  # Momentum conservation
+            eq3 = ((self.m_flow_primary * (self.state_primary_throat.h + 0.5 * v_throat ** 2) +
+                    self.m_flow_secondary * (self.state_secondary_mixing.h + 0.5 * v_suction ** 2) -
+                    self.m_flow_outlet * (h_mix + 0.5 * v_mix ** 2)) /
+                   (self.m_flow_primary * (self.state_primary_throat.h + 0.5 * v_throat ** 2)))  # Energy conservation
+
+            print(eq1, eq2, eq3)
+            rel_err.append((eq1, eq2, eq3))
+            var.append((p_mix, h_mix, v_mix))
+
+            if max(abs(x) for x in rel_err[-1]) <= self.max_err:
+                self.state_mixing = self.med_prop.calc_state("PH", p_mix, h_mix)
+                break
+
+            state_current = self.med_prop.calc_state("PH", p_mix, h_mix)
+            jacobian: list[list] = [[], [], []]
+            drho_dp = self.med_prop.get_partial_derivative("D", "P", "H", state_current)
+            drho_dh = self.med_prop.get_partial_derivative("D", "H", "P", state_current)
+            dmass_dp = -A_mix * v_mix * drho_dp
+            dmass_dh = -A_mix * v_mix * drho_dh
+            dmass_dv = -A_mix * state_current.d
+            dimpulse_dp = -A_mix * (1 + v_mix ** 2 * drho_dp)
+            dimpulse_dh = -A_mix * v_mix ** 2 * drho_dh
+            dimpulse_dv = -2 * A_mix * state_current.d * v_mix
+            denergy_dp = 0
+            denergy_dh = -self.m_flow_outlet
+            denergy_dv = -self.m_flow_outlet * v_mix
+
+            jacobian[0] = [dmass_dp, dmass_dh, dmass_dv]
+            jacobian[1] = [dimpulse_dp, dimpulse_dh, dimpulse_dv]
+            jacobian[2] = [denergy_dp, denergy_dh, denergy_dv]
+
+            print(jacobian)
+
+            J = np.array(jacobian, dtype=float)
+            f_vec = np.array(rel_err[-1], dtype=float)
+            corrections = -np.linalg.solve(J, f_vec)
+            print(f"corrections: {corrections}")
+
+            if 'prev_err' not in locals():
+                prev_err = rel_err[-1]
+
+            # If the sign of any residual changed or the error increased, reduce the relaxation factor to prevent oscillations
+            if np.sign(rel_err[-1][0]) != np.sign(prev_err[0]) or abs(rel_err[-1][0]) > abs(prev_err[0])\
+                    or np.sign(rel_err[-1][1]) != np.sign(prev_err[1]) or abs(rel_err[-1][1]) > abs(prev_err[1])\
+                    or np.sign(rel_err[-1][2]) != np.sign(prev_err[2]) or abs(rel_err[-1][2]) > abs(prev_err[2]):
+                newton_relaxation_factor = max(0.1, newton_relaxation_factor * 0.8)
+            else:
+                newton_relaxation_factor = min(1.0, newton_relaxation_factor * 1.1)
+
+            prev_err = rel_err[-1]
+
+            if corrections[0] > self.state_primary.p:  # Prevent non-physical pressure values
+                corrections[0] = self.state_primary.p - p_mix - 1e-6
+            p_mix += corrections[0] * newton_relaxation_factor
+            h_mix += corrections[1] * newton_relaxation_factor
+            if corrections[2] < -v_mix:  # Prevent negative velocities
+                corrections[2] = -v_mix + 1e-6
+            v_mix += corrections[2] * newton_relaxation_factor
 
 
 
-        initial_guess = [p_mix[0], 50.0, 350000.0]  # Initial guess for p_mix, v_mix, h_mix
-        solution = fsolve(equations, initial_guess, full_output=True)
-        p_mix_solution, v_mix_solution, h_mix_solution = solution[0]
-        print (solution)
-        # self.state_mixing = self.med_prop.calc_state("PH", p_mix_solution, h_mix_solution)
-
-        errs = np.array(err)
+        errs = np.array(rel_err)
         vars_arr = np.array(var)
 
         fig, axs = plt.subplots(4, 1, figsize=(8, 6))
