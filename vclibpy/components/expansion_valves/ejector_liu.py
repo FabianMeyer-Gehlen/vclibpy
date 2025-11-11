@@ -171,6 +171,8 @@ class EjectorLiu(Ejector):
             raise ValueError(f"p_suction ({p_suction:.3f} Pa) out of range (2.5 MPa to 5 MPa). Unable to calculate suction nozzle efficiency using the correlation of Liu and Groll.")
         if not 15 + 273.15 <= self.state_secondary.T <= 26 + 273.15:
             raise ValueError(f"T_suction ({self.state_secondary.T-273.15:.3f} °C) out of range (15 °C to 26 °C). Unable to calculate suction nozzle efficiency using the correlation of Liu and Groll.")
+        if not 0.05 <= self.m_flow_secondary <= 0.07:
+            raise ValueError(f"Calculated mass flow rate ({self.m_flow_secondary:.3f} kg/s) is outside of validity range for ejector model (0.05-0.07 kg/s). Check input parameters.")
 
         # Calculation of the isentropic suction nozzle efficiency according to Liu and Grolls empirical correlation
         pi = self.state_primary.p / p_suction
@@ -228,8 +230,6 @@ class EjectorLiu(Ejector):
             # Check if the error is small enough to stop the iteration
             if abs(rel_err[-1]) < self.max_err:
                 self.state_secondary_mixing = self.med_prop.calc_state("PH", p_suction_exit[0], h_suction_exit[0])
-                if not 0.05 <= self.m_flow_secondary <= 0.07:
-                    raise ValueError(f"Calculated mass flow rate ({self.m_flow_secondary:.3f} kg/s) is outside of validity range for ejector model (0.05-0.07 kg/s). Check input parameters.")
                 break
             else:  # If the error is still to large, the local differential can be calculated and the next pressure step determined
                 differential = (((v_suction_exit[1] - v_conservation_mass[1]) - (v_suction_exit[0] - v_conservation_mass[0])) /
