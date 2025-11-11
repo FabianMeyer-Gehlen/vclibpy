@@ -23,7 +23,7 @@ class Ejector(ThreePortComponent, abc.ABC):
         self.state_mixing: ThermodynamicState = None  # Thermodynamic state of mixed flow at mixing chamber
 
     @abc.abstractmethod
-    def calculate_motive_nozzle(self, p_motive: float, p_suction: float, h_motive: float):
+    def calculate_motive_nozzle(self, p_motive: float, h_motive: float, p_suction: float):
         """
         Calculate mass flow and state inside motive nozzle throat
 

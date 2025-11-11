@@ -20,17 +20,23 @@ def main(rcParams_path: str = None):
     test_ejector()
 
 def test_ejector():
-    ejector = EjectorLiu(d_throat=2.7, show_iteration=True)
+    ejector = EjectorLiu(d_throat=2.7, d_diff=17.2, show_iteration=True)
     ejector.med_prop = CoolProp(fluid_name="CarbonDioxide")
+
+    entrainment_ratio = 0.3
+
     state_motive = ejector.med_prop.calc_state("PT", 97e5, 43+273.15)
-    ejector.calculate_motive_nozzle(state_motive.p, 43e5, state_motive.h)
     state_suction = ejector.med_prop.calc_state("PT", 42e5, 24+273.15)
-    ejector.calculate_suction_nozzle(0.3, state_suction.p, state_suction.h)
+
+    ejector.calculate_motive_nozzle(state_motive.p, state_motive.h, state_suction.p)
+    ejector.calculate_suction_nozzle(entrainment_ratio, state_suction.p, state_suction.h)
+    ejector.calculate_mixing_chamber(entrainment_ratio)
+    ejector.calculate_diffusor()
     print(f"Ejector data:"
           f"\n Mass flow motive: {ejector.m_flow_primary:.3f} kg/s"
           f"\n Mass flow suction: {ejector.m_flow_secondary:.3f} kg/s"
-          f"\n Pressures: {ejector.state_primary.p}, {ejector.state_primary_throat.p}, {ejector.state_secondary.p}, {ejector.state_secondary_mixing.p}")
-    ejector.calculate_mixing_chamber(0.3)
+          f"\n Mass flow mixed: {ejector.m_flow_outlet:.3f} kg/s"
+          f"\n Pressures: {ejector.state_primary.p}, {ejector.state_primary_throat.p}, {ejector.state_secondary.p}, {ejector.state_secondary_mixing.p}, {ejector.state_mixing.p}, {ejector.state_outlet.p}")
 if __name__ == "__main__":
     main('D:/kbr-fme/ebc.paper.mplstyle')
 
