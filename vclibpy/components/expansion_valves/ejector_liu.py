@@ -232,7 +232,8 @@ class EjectorLiu(Ejector):
                     raise ValueError(f"Calculated mass flow rate ({self.m_flow_secondary:.3f} kg/s) is outside of validity range for ejector model (0.05-0.07 kg/s). Check input parameters.")
                 break
             else:  # If the error is still to large, the local differential can be calculated and the next pressure step determined
-                differential = ((v_suction_exit[1] - v_conservation_mass[1]) - (v_suction_exit[0] - v_conservation_mass[0])) / (p_suction_exit[1] - p_suction_exit[0])
+                differential = (((v_suction_exit[1] - v_conservation_mass[1]) - (v_suction_exit[0] - v_conservation_mass[0])) /
+                                (p_suction_exit[1] - p_suction_exit[0]))
                 p_step = (v_suction_exit[0] - v_conservation_mass[0]) / differential * newton_relaxation_factor
 
                 if abs(p_step) >= self.step_max:
@@ -264,11 +265,13 @@ class EjectorLiu(Ejector):
         # Total mass flow at mixing chamber and diffusor
         self.m_flow_outlet = self.m_flow_primary + self.m_flow_secondary
 
+        # Calculate geometric parameters
         A_mix = np.pi * 1/4*(self.d_mixing*1e-3)**2  # Cross-sectional area of mixing chamber
         A_throat = np.pi * 1/4*(self.d_throat*1e-3)**2  # Cross-sectional area of motive nozzle throat
         d_suction = self.d_throat / self.dt_ds  # Diameter of suction nozzle
         A_suction = A_mix - A_throat  # Cross-sectional area of suction nozzle  #ToDO check with Barta if this is correct, oder if the area should be an annulus
 
+        # Calculate incoming velocities
         v_throat = self.m_flow_primary / (self.state_primary_throat.d * A_throat)  # Velocity at motive nozzle throat
         v_suction = self.m_flow_secondary / (self.state_secondary_mixing.d * A_suction)  # Velocity at suction nozzle exit / mixing chamber inlet
 
@@ -276,36 +279,21 @@ class EjectorLiu(Ejector):
         var: list[tuple[float, float, float]] = []  # store variables for each iteration
         num_iterations = 0  # Number of iterations
 
+        # Set starting values for p_mix, h_mix and v_mix
         p_mix = (self.state_primary.p + self.state_secondary.p) / 2  # Starting value for mixing chamber pressure
         h_mix = 3e5  # Starting value for mixing chamber enthalpy
         v_mix = (v_throat + v_suction) / 2  # Starting value for mixing chamber velocity
 
         while True:
             num_iterations += 1
-            print(f"Iteration {num_iterations}: p_mix={p_mix:.2f} Pa, h_mix={h_mix:.2f} J/kg, v_mix={v_mix:.2f} m/s")
+            # print(f"Iteration {num_iterations}: p_mix={p_mix:.2f} Pa, h_mix={h_mix:.2f} J/kg, v_mix={v_mix:.2f} m/s")
             if num_iterations >= self.max_num_iterations:
                 raise RuntimeError("Maximum number of iterations for mixing chamber calculation exceeded. Stopping")
 
+            # Calculate density at mixing chamber outlet from current guess values
             rho_mix = self.med_prop.calc_state("PH", p_mix, h_mix).d
 
-            eq1 = ((self.m_flow_primary + self.m_flow_secondary - rho_mix * A_mix * v_mix) / self.m_flow_primary)  # Mass conservation
-            eq2 = ((self.state_primary_throat.p * A_throat + eta_mixing * self.m_flow_primary * v_throat +
-                    self.state_secondary_mixing.p * (A_mix - A_throat) +
-                    eta_mixing * self.state_secondary_mixing.d * (A_mix - A_throat) * v_suction ** 2 -
-                    p_mix * A_mix - rho_mix * A_mix * v_mix ** 2) /
-                   (self.state_primary_throat.p * A_throat + eta_mixing * self.m_flow_primary * v_throat))  # Momentum conservation
-            eq3 = ((self.m_flow_primary * (self.state_primary_throat.h + 0.5 * v_throat ** 2) +
-                    self.m_flow_secondary * (self.state_secondary_mixing.h + 0.5 * v_suction ** 2) -
-                    self.m_flow_outlet * (h_mix + 0.5 * v_mix ** 2)) /
-                   (self.m_flow_primary * (self.state_primary_throat.h + 0.5 * v_throat ** 2)))  # Energy conservation
-
-            print(eq1, eq2, eq3)
-            rel_err.append((eq1, eq2, eq3))
-            var.append((p_mix, h_mix, v_mix))
-
-            p_mix *= (1 + self.newton_step_size)
-            rho_mix = self.med_prop.calc_state("PH", p_mix, h_mix).d
-
+            # Calculate the three equations for mass, momentum and energy conservation. They should become 0 at the solution
             eq1 = ((self.m_flow_primary + self.m_flow_secondary - rho_mix * A_mix * v_mix) / self.m_flow_primary)  # Mass conservation
             eq2 = ((self.state_primary_throat.p * A_throat + eta_mixing * self.m_flow_primary * v_throat +
                     self.state_secondary_mixing.p * (A_mix - A_throat) +
@@ -320,98 +308,60 @@ class EjectorLiu(Ejector):
             rel_err.append((eq1, eq2, eq3))
             var.append((p_mix, h_mix, v_mix))
 
-            print((rel_err[-1][0] - rel_err[-2][0])/(var[-2][0]*self.newton_step_size))
-            print((rel_err[-1][1] - rel_err[-2][1])/(var[-2][0]*self.newton_step_size))
-            print((rel_err[-1][2] - rel_err[-2][2])/(var[-2][0]*self.newton_step_size))
+            # print("Errors: ", rel_err[-1])
 
-            p_mix = var[-2][0]  # reset p_mix
-            h_mix *= (1 + self.newton_step_size)
-            rho_mix = self.med_prop.calc_state("PH", p_mix, h_mix).d
-
-            eq1 = ((self.m_flow_primary + self.m_flow_secondary - rho_mix * A_mix * v_mix) / self.m_flow_primary)  # Mass conservation
-            eq2 = ((self.state_primary_throat.p * A_throat + eta_mixing * self.m_flow_primary * v_throat +
-                    self.state_secondary_mixing.p * (A_mix - A_throat) +
-                    eta_mixing * self.state_secondary_mixing.d * (A_mix - A_throat) * v_suction ** 2 -
-                    p_mix * A_mix - rho_mix * A_mix * v_mix ** 2) /
-                   (self.state_primary_throat.p * A_throat + eta_mixing * self.m_flow_primary * v_throat))  # Momentum conservation
-            eq3 = ((self.m_flow_primary * (self.state_primary_throat.h + 0.5 * v_throat ** 2) +
-                    self.m_flow_secondary * (self.state_secondary_mixing.h + 0.5 * v_suction ** 2) -
-                    self.m_flow_outlet * (h_mix + 0.5 * v_mix ** 2)) /
-                   (self.m_flow_primary * (self.state_primary_throat.h + 0.5 * v_throat ** 2)))  # Energy conservation
-
-            rel_err.append((eq1, eq2, eq3))
-            var.append((p_mix, h_mix, v_mix))
-
-            print((rel_err[-1][0] - rel_err[-3][0]) / (var[-2][1] * self.newton_step_size))
-            print((rel_err[-1][1] - rel_err[-3][1]) / (var[-2][1] * self.newton_step_size))
-            print((rel_err[-1][2] - rel_err[-3][2]) / (var[-2][1] * self.newton_step_size))
-
-            h_mix = var[-2][1]  # reset h_mix
-            v_mix *= (1 + self.newton_step_size)
-            rho_mix = self.med_prop.calc_state("PH", p_mix, h_mix).d
-
-            eq1 = ((self.m_flow_primary + self.m_flow_secondary - rho_mix * A_mix * v_mix) / self.m_flow_primary)  # Mass conservation
-            eq2 = ((self.state_primary_throat.p * A_throat + eta_mixing * self.m_flow_primary * v_throat +
-                    self.state_secondary_mixing.p * (A_mix - A_throat) +
-                    eta_mixing * self.state_secondary_mixing.d * (A_mix - A_throat) * v_suction ** 2 -
-                    p_mix * A_mix - rho_mix * A_mix * v_mix ** 2) /
-                   (self.state_primary_throat.p * A_throat + eta_mixing * self.m_flow_primary * v_throat))  # Momentum conservation
-            eq3 = ((self.m_flow_primary * (self.state_primary_throat.h + 0.5 * v_throat ** 2) +
-                    self.m_flow_secondary * (self.state_secondary_mixing.h + 0.5 * v_suction ** 2) -
-                    self.m_flow_outlet * (h_mix + 0.5 * v_mix ** 2)) /
-                   (self.m_flow_primary * (self.state_primary_throat.h + 0.5 * v_throat ** 2)))  # Energy conservation
-
-            rel_err.append((eq1, eq2, eq3))
-            var.append((p_mix, h_mix, v_mix))
-
-            print((rel_err[-1][0] - rel_err[-4][0]) / (var[-2][2] * self.newton_step_size))
-            print((rel_err[-1][1] - rel_err[-4][1]) / (var[-2][2] * self.newton_step_size))
-            print((rel_err[-1][2] - rel_err[-4][2]) / (var[-2][2] * self.newton_step_size))
-
+            # Check if all errors are small enough to stop the iteration
             if max(abs(x) for x in rel_err[-1]) <= self.max_err:
                 self.state_mixing = self.med_prop.calc_state("PH", p_mix, h_mix)
                 break
 
-            state_current = self.med_prop.calc_state("PH", p_mix, h_mix)
-            jacobian: list[list] = [[], [], []]
-            drho_dp = self.med_prop.get_partial_derivative("D", "P", "H", state_current)
-            drho_dh = self.med_prop.get_partial_derivative("D", "H", "P", state_current)
-            dmass_dp = -A_mix * v_mix * drho_dp / self.m_flow_primary
-            dmass_dh = -A_mix * v_mix * drho_dh / self.m_flow_primary
-            dmass_dv = -A_mix * state_current.d / self.m_flow_primary
-            dimpulse_dp = -A_mix * (1 + v_mix ** 2 * drho_dp) / (self.state_primary_throat.p * A_throat + eta_mixing * self.m_flow_primary * v_throat)
-            dimpulse_dh = -A_mix * v_mix ** 2 * drho_dh / (self.state_primary_throat.p * A_throat + eta_mixing * self.m_flow_primary * v_throat)
-            dimpulse_dv = -2 * A_mix * state_current.d * v_mix / (self.state_primary_throat.p * A_throat + eta_mixing * self.m_flow_primary * v_throat)
-            denergy_dp = 0
-            denergy_dh = -self.m_flow_outlet / (self.m_flow_primary * (self.state_primary_throat.h + 0.5 * v_throat ** 2))
-            denergy_dv = -self.m_flow_outlet * v_mix / (self.m_flow_primary * (self.state_primary_throat.h + 0.5 * v_throat ** 2))
+            # If still here, the errors are too large, and we have to do another iteration
+            # Calculate Jacobian matrix numerically to determine next steps for p_mix, h_mix and v_mix
+            state_mix = self.med_prop.calc_state("PH", p_mix, h_mix)
 
-            jacobian[0] = [dmass_dp, dmass_dh, dmass_dv]
-            jacobian[1] = [dimpulse_dp, dimpulse_dh, dimpulse_dv]
-            jacobian[2] = [denergy_dp, denergy_dh, denergy_dv]
+            drho_dp = self.med_prop.get_partial_derivative("D", "P", "H", state_mix)
+            drho_dh = self.med_prop.get_partial_derivative("D", "H", "P", state_mix)
 
-            print(jacobian)
+            J = np.zeros((3, 3))  # Jacobian matrix
 
-            J = np.array(jacobian, dtype=float)
+            # d(eq1)/d(p_mix, h_mix, v_mix)
+            J[0,0] = -A_mix * v_mix * drho_dp / self.m_flow_primary
+            J[0,1] = -A_mix * v_mix * drho_dh / self.m_flow_primary
+            J[0,2] = -A_mix * state_mix.d / self.m_flow_primary
+            # d(eq2)/d(p_mix, h_mix, v_mix)
+            denom_mom = self.state_primary_throat.p * A_throat + eta_mixing * self.m_flow_primary * v_throat
+            J[1,0] = -A_mix * (1 + v_mix ** 2 * drho_dp) / denom_mom
+            J[1,1] = -A_mix * v_mix ** 2 * drho_dh / denom_mom
+            J[1,2] = -2 * A_mix * state_mix.d * v_mix / denom_mom
+            # d(eq3)/d(p_mix, h_mix, v_mix)
+            denom_en = self.m_flow_primary * (self.state_primary_throat.h + 0.5 * v_throat ** 2)
+            J[2,0] = 0
+            J[2,1] = -self.m_flow_outlet / denom_en
+            J[2,2] = -self.m_flow_outlet * v_mix / denom_en
+
             f_vec = np.array(rel_err[-1], dtype=float)
             corrections = -np.linalg.solve(J, f_vec)
-            print(f"corrections: {corrections}")
+            # print(f"corrections: {corrections}")
 
             if 'prev_err' not in locals():
                 prev_err = rel_err[-1]
 
             # If the sign of any residual changed or the error increased, reduce the relaxation factor to prevent oscillations
-            if np.sign(rel_err[-1][0]) != np.sign(prev_err[0]) or abs(rel_err[-1][0]) > abs(prev_err[0])\
-                    or np.sign(rel_err[-1][1]) != np.sign(prev_err[1]) or abs(rel_err[-1][1]) > abs(prev_err[1])\
-                    or np.sign(rel_err[-1][2]) != np.sign(prev_err[2]) or abs(rel_err[-1][2]) > abs(prev_err[2]):
+            if np.any(np.sign(rel_err[-1])!=np.sign(prev_err)) or np.any(np.abs(rel_err[-1]>np.abs(prev_err))):
                 newton_relaxation_factor = max(0.1, newton_relaxation_factor * 0.8)
+                # print(f"Reducing relaxation factor to {newton_relaxation_factor}")
             else:
                 newton_relaxation_factor = min(1.0, newton_relaxation_factor * 1.1)
+                # print(f"Increasing relaxation factor to {newton_relaxation_factor}")
 
             prev_err = rel_err[-1]
 
-            if corrections[0] > self.state_primary.p:  # Prevent non-physical pressure values
+            # Now we can update p_mix, h_mix and v_mix with the calculated corrections
+            # Prevent non-physical pressure values
+            if p_mix + corrections[0] > self.state_primary.p:
                 corrections[0] = self.state_primary.p - p_mix - 1e-6
+            elif p_mix + corrections[0] < self.state_secondary.p:
+                corrections[0] = self.state_secondary.p - p_mix + 1e-6
             p_mix += corrections[0] * newton_relaxation_factor
             h_mix += corrections[1] * newton_relaxation_factor
             if corrections[2] < -v_mix:  # Prevent negative velocities
@@ -420,24 +370,24 @@ class EjectorLiu(Ejector):
 
 
 
-        errs = np.array(rel_err)
-        vars_arr = np.array(var)
-
-        fig, axs = plt.subplots(4, 1, figsize=(8, 6))
-
-        axs[0].plot(errs[:, 0], label="eq1")
-        axs[0].plot(errs[:, 1], label="eq2")
-        axs[0].plot(errs[:, 2], label="eq3")
-        axs[0].set_xlabel("Iteration")
-        axs[0].set_ylabel("Relativer Fehler")
-
-        axs[1].plot(vars_arr[:, 0], label="p_mix")
-        axs[2].plot(vars_arr[:, 1], label="v_mix")
-        axs[3].plot(vars_arr[:, 2], label="h_mix")
-        axs[3].set_xlabel("Iteration")
-        for ax in axs:
-            ax.legend()
-
-        plt.tight_layout()
-
-        plt.show()
+        # errs = np.array(rel_err)
+        # vars_arr = np.array(var)
+        #
+        # fig, axs = plt.subplots(4, 1, figsize=(8, 6))
+        #
+        # axs[0].plot(errs[:, 0], label="eq1")
+        # axs[0].plot(errs[:, 1], label="eq2")
+        # axs[0].plot(errs[:, 2], label="eq3")
+        # axs[0].set_xlabel("Iteration")
+        # axs[0].set_ylabel("Relativer Fehler")
+        #
+        # axs[1].plot(vars_arr[:, 0], label="p_mix")
+        # axs[2].plot(vars_arr[:, 1], label="v_mix")
+        # axs[3].plot(vars_arr[:, 2], label="h_mix")
+        # axs[3].set_xlabel("Iteration")
+        # for ax in axs:
+        #     ax.legend()
+        #
+        # plt.tight_layout()
+        #
+        # plt.show()
