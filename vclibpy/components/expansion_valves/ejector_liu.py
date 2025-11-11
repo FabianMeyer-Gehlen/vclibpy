@@ -33,6 +33,7 @@ class EjectorLiu(Ejector):
         d_throat (float): Diameter of the motive nozzle throat in mm (has to be between 1.8 and 2.7 mm for empirical correlations to work).
         d_mixing (float): Diameter of the mixing chamber in mm (has to be 4 mm for empirical correlations to work).
         dt_ds (float): Ratio of motive nozzle throat diameter to suction nozzle diameter (suggested value by Barta et al. 2021 is 0.33).
+        A_mix_A_diff (float): Ratio of mixing chamber cross-sectional area to diffusor cross-sectional area (suggested value by Barta et al. 2021 is 0.111).
         **kwargs: Additional keyword arguments for the iteration.
     """
 
@@ -40,6 +41,7 @@ class EjectorLiu(Ejector):
                  d_throat: float = 1.8,
                  d_mixing: float = 4,
                  dt_ds: float = 0.33,
+                 A_mix_A_diff = 0.111,
                  **kwargs):
         """Initialize class with kwargs"""
         self.max_err = kwargs.pop("max_err", 0.005)
@@ -53,6 +55,8 @@ class EjectorLiu(Ejector):
         self.d_throat = d_throat
         self.d_mixing = d_mixing
         self.dt_ds = dt_ds
+        self.v_mix: float = -1.0  # Velocity at mixing chamber outlet
+        self.A_mix_A_diff = A_mix_A_diff
 
 
     def calculate_motive_nozzle(self, p_motive: float, p_suction: float, h_motive: float):
@@ -313,6 +317,7 @@ class EjectorLiu(Ejector):
             # Check if all errors are small enough to stop the iteration
             if max(abs(x) for x in rel_err[-1]) <= self.max_err:
                 self.state_mixing = self.med_prop.calc_state("PH", p_mix, h_mix)
+                self.v_mix = v_mix
                 break
 
             # If still here, the errors are too large, and we have to do another iteration
@@ -391,3 +396,26 @@ class EjectorLiu(Ejector):
         # plt.tight_layout()
         #
         # plt.show()
+
+
+    def calculate_diffusor(self):
+        """
+        Calculate state inside diffusor
+
+        Returns:
+            None
+        """
+        # Calculation of correlation for pressure recovery coefficient proposed by Owen et al. 1992 used by Liu and Groll 2013
+        rho_mix_g = self.med_prop.calc_state("PQ", self.state_mixing.p, 1).d
+        rho_mix_l = self.med_prop.calc_state("PQ", self.state_mixing.p, 0).d
+        c_t = (0.85 * self.state_mixing.d * (1-self.A_mix_A_diff**2) *
+               (self.state_mixing.q**2/rho_mix_g + (1-self.state_mixing.q)**2/rho_mix_l))
+
+        # Pressure at diffusor outlet from momentum conservation
+        p_diffusor = c_t * 1/2 * self.state_mixing.d*self.v_mix**2 + self.state_mixing.p
+
+        # Enthalpy at diffusor outlet from energy conservation
+        h_diffusor = ((self.state_primary.h*self.m_flow_primary + self.state_secondary.h*self.m_flow_secondary)/
+                      (self.m_flow_primary + self.m_flow_secondary))
+
+        self.state_outlet = self.med_prop.calc_state("PH", p_diffusor, h_diffusor)
