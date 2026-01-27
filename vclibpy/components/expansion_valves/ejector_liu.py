@@ -98,6 +98,16 @@ class EjectorLiu(Ejector):
         rel_err = []  # relative error in percent
         num_iterations = 0  # Number of iterations
 
+        if self.show_iteration:
+            p_throat_hist: list[float] = []  # history for plotting
+            rel_err_hist: list[float] = []
+            fig_m, ax_m = plt.subplots(2, 1, sharex=True)
+            ax_m[0].set_ylabel("p_throat [Pa]")
+            ax_m[1].set_ylabel("rel_err [%]")
+            ax_m[1].set_xlabel("iteration")
+            plt.ion()
+            plt.show(block=False)
+
         while True:
             num_iterations += 1
             if num_iterations >= self.max_num_iterations:
@@ -135,6 +145,23 @@ class EjectorLiu(Ejector):
             else:
                 newton_relaxation_factor = min(1.0, newton_relaxation_factor * 1.1)
             prev_res = res
+
+            # Print iteration data and plot if desired
+            if self.show_iteration:
+                print(f"Iteration {num_iterations}: p_throat={p_throat[0]:.2f} Pa, v_throat={v_throat[0]:.2f} m/s, c_throat={c_throat[0]:.2f} m/s, rel_err={rel_err[-1]:.5f} %")
+                try:
+                    p_throat_hist.append(float(p_throat[0]))
+                    rel_err_hist.append(rel_err[-1])
+                    ax_m[0].clear()
+                    ax_m[1].clear()
+                    ax_m[0].plot(range(1, len(p_throat_hist) + 1), p_throat_hist, marker='o')
+                    ax_m[1].plot(range(1, len(rel_err_hist) + 1), rel_err_hist, marker='o')
+                    ax_m[0].set_ylabel("p_throat [Pa]")
+                    ax_m[1].set_ylabel("rel_err [%]")
+                    ax_m[1].set_xlabel("iteration")
+                    plt.pause(1e-5)
+                except Exception:
+                    pass
 
             # Check if the error is small enough to stop the iteration
             if abs(rel_err[-1]) < self.max_err:
