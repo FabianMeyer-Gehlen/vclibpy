@@ -64,9 +64,8 @@ class StandardCycleTranscritical(BaseCycle):
         ]
 
         # Compared to the subcritical flowsheet, we cannot calculate the inlet and outlet state of the condenser/gas cooler
-        # through the quality of the vapor, due to the supercritical state inside the gas cooler
-        # Therefore the gas cooler is split into 20 segments and 
-        # Interpolate the states between the condenser inlet and outlet
+        # through the quality of the vapor, due to the supercritical state inside the gas cooler.
+        # Therefore, the gas cooler is split into 50 segments and the states are interpolated between the inlet and outlet state of the condenser/gas cooler.
         p = self.condenser.state_inlet.p
         h_in = self.condenser.state_inlet.h
         h_out = self.condenser.state_outlet.h
