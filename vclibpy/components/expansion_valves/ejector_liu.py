@@ -93,14 +93,14 @@ class EjectorLiu(Ejector):
 
         # Initial guess for p_throat
         p_throat: list[float] = []
-        p_throat.append(p_suction + (p_motive-p_suction)*0.3)  #ToDo find better start value for p_throat
+        p_throat.append(p_suction + (p_motive-p_suction)*0.99)  #ToDo find better start value for p_throat
         p_throat.append(p_throat[0] * (1 + self.newton_step_size))
         rel_err = []  # relative error in percent
         num_iterations = 0  # Number of iterations
 
+        # Setup for plotting if desired
         if self.show_iteration:
             p_throat_hist: list[float] = []  # history for plotting
-            rel_err_hist: list[float] = []
             fig_m, ax_m = plt.subplots(2, 1, sharex=True)
             ax_m[0].set_ylabel("p_throat [Pa]")
             ax_m[1].set_ylabel("rel_err [%]")
@@ -141,21 +141,21 @@ class EjectorLiu(Ejector):
 
             # Correcting the relaxation factor depending on the last step
             if np.sign(res) != np.sign(prev_res) or abs(res) > abs(prev_res):  # If the sign of the residual changed or the error increased, reduce the relaxation factor to prevent oscillations
-                newton_relaxation_factor = max(0.1, newton_relaxation_factor * 0.8)
+                newton_relaxation_factor = max(0.1, newton_relaxation_factor * 0.7)
             else:
                 newton_relaxation_factor = min(1.0, newton_relaxation_factor * 1.1)
             prev_res = res
 
             # Print iteration data and plot if desired
             if self.show_iteration:
-                print(f"Iteration {num_iterations}: p_throat={p_throat[0]:.2f} Pa, v_throat={v_throat[0]:.2f} m/s, c_throat={c_throat[0]:.2f} m/s, rel_err={rel_err[-1]:.5f} %")
+                print(f"Iteration {num_iterations}: p_throat={p_throat[0]:.2f} Pa, v_throat={v_throat[0]:.2f} m/s, c_throat={c_throat[0]:.2f} m/s, rel_err={rel_err[-1]:.5f} %"
+                      f"\nentropy_throat={self.med_prop.calc_state('PH', p_throat[0], h_throat[0]).s:.2f} J/(kg*K), newton_relaxation_factor={newton_relaxation_factor:.3f}, eta_is_motive={eta_is_motive:.5f}")
                 try:
                     p_throat_hist.append(float(p_throat[0]))
-                    rel_err_hist.append(rel_err[-1])
                     ax_m[0].clear()
                     ax_m[1].clear()
                     ax_m[0].plot(range(1, len(p_throat_hist) + 1), p_throat_hist, marker='o')
-                    ax_m[1].plot(range(1, len(rel_err_hist) + 1), rel_err_hist, marker='o')
+                    ax_m[1].plot(range(1, len(rel_err) + 1), rel_err, marker='o')
                     ax_m[0].set_ylabel("p_throat [Pa]")
                     ax_m[1].set_ylabel("rel_err [%]")
                     ax_m[1].set_xlabel("iteration")
@@ -170,7 +170,8 @@ class EjectorLiu(Ejector):
                 self.v_throat = v_throat[0]
                 print(f"Motive nozzle converged in {num_iterations} iterations with v_throat={v_throat[0]:.2f} m/s")
                 print(f"State Primary in: {self.state_primary}"
-                        f"\nState Primary throat: {self.state_primary_throat}")
+                        f"\nState Primary throat: {self.state_primary_throat}"
+                        f"\nMass flow Primary: {self.m_flow_primary:.3f} kg/s")
                 if not 0.1 <= self.m_flow_primary <= 0.25:
                     raise ValueError(f"Calculated mass flow rate ({self.m_flow_primary:.3f} kg/s) is outside of validity range for ejector model (0.1-0.25 kg/s). Check input parameters.")
                 break
@@ -263,7 +264,7 @@ class EjectorLiu(Ejector):
             # c=self.med_prop.get_two_phase_speed_of_sound(p_suction_exit[0], self.med_prop.calc_state("PH", p_suction_exit[0], h_suction_exit[0]).q)
             c = self.med_prop.get_speed_of_sound(self.med_prop.calc_state("PH", p_suction_exit[0], h_suction_exit[0]))
 
-            print(f"Iteration {num_iterations}: p_suction_exit={p_suction_exit[0]:.2f} Pa, v_suction_exit={v_suction_exit[0]:.2f} m/s, v_conservation_mass={v_conservation_mass[0]:.2f} m/s, rel_err={rel_err[-1]:.5f} %, c = {c:.2f} m/s") if self.show_iteration else None
+            #print(f"Iteration {num_iterations}: p_suction_exit={p_suction_exit[0]:.2f} Pa, v_suction_exit={v_suction_exit[0]:.2f} m/s, v_conservation_mass={v_conservation_mass[0]:.2f} m/s, rel_err={rel_err[-1]:.5f} %, c = {c:.2f} m/s") if self.show_iteration else None
 
             # Check if the error is small enough to stop the iteration
             if abs(rel_err[-1]) < self.max_err:
@@ -317,13 +318,13 @@ class EjectorLiu(Ejector):
         num_iterations = 0  # Number of iterations
 
         # Set starting values for p_mix, h_mix and v_mix
-        p_mix = (self.state_primary.p + self.state_secondary.p) / 2  # Starting value for mixing chamber pressure
+        p_mix = self.state_secondary.p + 2e5 # Starting value for mixing chamber pressure
         v_mix = (self.v_throat + self.v_suction) / 2  # Starting value for mixing chamber velocity
         h_mix = (self.m_flow_primary*self.state_primary.h + self.m_flow_secondary*self.state_secondary.h)/(self.m_flow_primary+self.m_flow_secondary) - v_mix**2/2  # Starting value for mixing chamber enthalpy
 
         if self.show_iteration:
             fig_iterations, ax_iterations = plt.subplots(3, 2, sharex=True)
-            plot_last = -100
+            plot_last = -100  # only plot the last 100 iterations
 
         while True:
             num_iterations += 1
@@ -384,6 +385,77 @@ class EjectorLiu(Ejector):
                 ax_iterations[2, 0].scatter(iterations, v_vals)
                 plt.draw()
                 plt.pause(1e-5)
+
+                # Error surface: absolute total error = |eq1| + |eq2| over a grid of (p_mix, h_mix)
+                # Compute and plot once per iteration (lightweight grid; adjust as needed)
+                try:
+                    if not hasattr(self, "_fig_errsurf"):
+                        self._fig_errsurf, self._ax_errsurf = plt.subplots()
+                        self._fig_errsurf.canvas.manager.set_window_title("Mixing chamber absolute total error surface")
+
+                    p_min = float(self.state_secondary_mixing.p)
+                    p_max = float(self.state_primary_throat.p)
+                    # Enthalpy bounds around physically relevant range
+                    h_lo = float(min(self.state_secondary_mixing.h, self.state_primary_throat.h))
+                    h_hi = float(max(self.state_primary.h, self.state_secondary.h))
+                    # Expand slightly to visualize edges
+                    h_pad = 0.02 * max(1.0, abs(h_hi - h_lo))
+                    h_lo -= h_pad
+                    h_hi += h_pad
+
+                    Np, Nh = 60, 60
+                    p_grid = np.linspace(p_min, p_max, Np)
+                    h_grid = np.linspace(h_lo, h_hi, Nh)
+                    err_grid = np.full((Nh, Np), np.nan, dtype=float)
+
+                    denom_mom = self.state_primary_throat.p * A_throat + eta_mixing * self.m_flow_primary * self.v_throat
+
+                    for ih, hh in enumerate(h_grid):
+                        # Velocity from energy equation for each h
+                        diff_e = energy_ref - hh
+                        if diff_e <= 0:
+                            # non-physical; leave as NaN
+                            continue
+                        v_loc = np.sqrt(2.0 * diff_e)
+                        for ip, pp in enumerate(p_grid):
+                            try:
+                                rho_loc = self.med_prop.calc_state("PH", pp, hh).d
+                                eq1_g = (self.m_flow_primary + self.m_flow_secondary - rho_loc * A_mix * v_loc) / self.m_flow_primary
+                                eq2_g = (
+                                    self.state_primary_throat.p * A_throat + eta_mixing * self.m_flow_primary * self.v_throat +
+                                    self.state_secondary_mixing.p * (A_mix - A_throat) +
+                                    eta_mixing * self.state_secondary_mixing.d * (A_mix - A_throat) * self.v_suction ** 2 -
+                                    pp * A_mix - rho_loc * A_mix * v_loc ** 2
+                                ) / denom_mom
+                                err_grid[ih, ip] = abs(eq1_g) + abs(eq2_g)
+                            except Exception:
+                                # invalid state; keep NaN
+                                pass
+
+                    ax = self._ax_errsurf
+                    ax.clear()
+                    # Use contourf with logarithmic-like levels if dynamic range is wide
+                    valid = np.isfinite(err_grid)
+                    if np.any(valid):
+                        vmin = np.nanpercentile(err_grid, 5)
+                        vmax = np.nanpercentile(err_grid, 95)
+                        levels = np.linspace(vmin, vmax, 20) if vmax > vmin else 20
+                        cf = ax.contourf(p_grid, h_grid, err_grid, vmin=0.0, levels=levels, cmap="viridis")
+                        # Overlay current iterate
+                        ax.scatter([p_mix], [h_mix], c="r", s=30, label="current iterate")
+                        ax.set_xlabel("p_mix [Pa]")
+                        ax.set_ylabel("h_mix [J/kg]")
+                        ax.set_title("Absolute total error surface: |eq1| + |eq2|")
+                        if not hasattr(self, "_errsurf_cbar"):
+                            self._errsurf_cbar = self._fig_errsurf.colorbar(cf, ax=ax)
+                        else:
+                            self._errsurf_cbar.update_normal(cf)
+                        ax.legend(loc="best")
+                        self._fig_errsurf.tight_layout()
+                        plt.pause(1e-5)
+                except Exception as _:
+                    # Keep iteration robust if plotting or grid evaluation fails
+                    pass
 
             # Convergence check
             if max(abs(x) for x in rel_err[-1]) <= self.max_err:
