@@ -247,7 +247,7 @@ class Iteration(Algorithm):
                     step_p2 = self.step_max
                     continue
             # else:
-            if flowsheet.flowsheet_name != "StandardTranscritical":
+            if flowsheet.flowsheet_name != "StandardTranscritical":  # "!=" meaning "unequal"
                 if error_con < 0:
                     p_2_next = p_2 + step_p2
                     continue
@@ -309,20 +309,32 @@ class Iteration(Algorithm):
 
         if self.show_iteration:
             plt.close(fig_iterations)
-            if self.save_path_plots is not None:
-                pd.DataFrame({
-                    "p_1": p_1_history,
-                    "p_2": p_2_history,
-                    "error_con": error_con_history,
-                    "error_eva": error_eva_history,
-                    "dT_con": dT_con_history,
-                    "dT_eva": dT_eva_history,
-                    "cop": cop_history,
-                }).to_excel(self.save_path_plots.joinpath(f"{inputs.get_name()}.xlsx"))
 
         flowsheet.iteration_converged = True
         fs_state.set(name="converged", value=1, unit="-", description="Algorithm converged (1 true, 0 false)")
-        return flowsheet.calculate_outputs_for_valid_pressures(
+        final_fs_state = flowsheet.calculate_outputs_for_valid_pressures(
             p_1=p_1, p_2=p_2, inputs=inputs, fs_state=fs_state,
             save_path_plots=self.save_path_plots
         )
+
+        p_1_history.append(p_1 / 1e5)
+        p_2_history.append(p_2 / 1e5)
+        cop_history.append(final_fs_state.get("COP").value)
+        error_con_history.append(final_fs_state.get("error_con").value)
+        error_eva_history.append(final_fs_state.get("error_eva").value)
+        dT_con_history.append(final_fs_state.get("dT_min_con").value)
+        dT_eva_history.append(final_fs_state.get("dT_min_eva").value)
+
+        if self.save_path_plots is not None:
+            pd.DataFrame({
+                "p_1": p_1_history,
+                "p_2": p_2_history,
+                "error_con": error_con_history,
+                "error_eva": error_eva_history,
+                "dT_con": dT_con_history,
+                "dT_eva": dT_eva_history,
+                "cop": cop_history,
+            }).to_excel(self.save_path_plots.joinpath(f"{inputs.get_name()}.xlsx"))
+
+        return final_fs_state
+

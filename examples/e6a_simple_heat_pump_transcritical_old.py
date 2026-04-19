@@ -1,9 +1,11 @@
 # # Example for a heat pump with a standard cycle
 
+import os
+
 def main(use_condenser_inlet: bool = True):
     # Let's start the complete cycle simulation with the
     # most basic flowsheet, the standard-cycle. As all flowsheets
-    # contain a condenser and an evaporator, we defined a common BaseCycle
+    # contain a condenser/gas cooler and an evaporator, we defined a common BaseCycle
     # to avoid code-repetition.
     # We can import this flowsheet and see how to use it. Note that
     # modern coding IDEs like PyCharm will tell you which arguments belong
@@ -153,6 +155,7 @@ def calculate_single_point():
         liquid_heat_transfer=heat_transfer.constant.ConstantHeatTransfer(alpha=5000),
         secondary_heat_transfer=heat_transfer.constant.ConstantHeatTransfer(alpha=25)
     )
+
     from vclibpy.components.expansion_valves import Bernoulli
     expansion_valve = Bernoulli(A=0.1)
 
@@ -179,6 +182,10 @@ def calculate_single_point():
     from vclibpy.utils.plotting import plot_cycle
 
     save_path = r"C:\Users\fabia\Downloads"
+    if not os.path.exists(save_path):
+        os.makedirs(save_path)
+        print(f"Info: Save path {save_path} has been created.")
+
     algorithm = Iteration(raise_errors=True, save_path_plots=save_path, show_iteration=True)
     speed_control = RelativeCompressorSpeedControl(0.2, 0.0, 0)
     eva_inputs = HeatExchangerInputs(T_in=18 + 273.15, m_flow=1)

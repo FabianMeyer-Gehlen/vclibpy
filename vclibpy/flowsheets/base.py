@@ -271,7 +271,7 @@ class BaseCycle:
         )
         if save_path_plots is not None:
             input_name = inputs.get_name()
-            self.plot_cycle(save_path=save_path_plots.joinpath(f"{input_name}_final_result.png"), inputs=inputs)
+            self.plot_cycle(save_path=save_path_plots.joinpath(f"{input_name}_final_result.svg"), inputs=inputs)
 
         return fs_state
 
