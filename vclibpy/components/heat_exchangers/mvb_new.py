@@ -212,10 +212,10 @@ class BasicHX(HeatExchanger, abc.ABC):
             T_ref_out_element = state_out_element.T-273.15
             dT_ref_element = abs(T_ref_in_element - T_ref_out_element)
 
-            dT_mins.append(T_ref_in_element - T_sec_in_element)
+            dT_mins.append(T_ref_in_element - T_sec_in_element) #ToDo: shouldn't this be T_ref_in_element - T_sec_out_element in case of counterflow?
             dT_mins.append(T_ref_out_element - T_sec_in_element-dT_sec_element)
             if dT_ref_element < 0.00001:
-                W_prim = np.inf
+                W_prim = np.inf #ToDo: doesn't this give a problem with high resolution meshes? Maybe a throw a warning to decrease mesh resolution
             else:
                 W_prim = Qdot_element / dT_ref_element
             NTU = self.calc_NTU(
@@ -264,7 +264,7 @@ class BasicHX(HeatExchanger, abc.ABC):
             if self.flow_type.lower() == "counter":
                 return math.log((1 - R * P) / (1 - P)) / (1 - R)
             if self.flow_type.lower() == "cross":
-                return - 1 / R * math.log(1 + R * math.log(1 - P))
+                return - 1 / R * math.log(1 + R * math.log(1 - P)) #ToDo: check if this is correct. This formula is missing the eta coefficient from DMEV Lecture
         except:
             return np.inf
 

@@ -672,7 +672,7 @@ class BaseCycle:
 class BaseCycleTC(BaseCycle):
 
     def calc_steady_state(self, inputs: Inputs, fluid: str = None, **kwargs):
-
+        #ToDo: Check COP optimization (seems to calculate two points after reaching optimal point and only stepping back one)
         q4_cop_res = {"q4": [], "COP":[]}
 
         start_time_warning = time.time()
