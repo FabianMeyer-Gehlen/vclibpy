@@ -886,7 +886,7 @@ class BaseCycleTC(BaseCycle):
                     #best_fs_state = deepcopy(fs_state)
 
                     q4_next = best_q4 + q4_step
-                elif abs(current_cop - best_cop) < 0.002:
+                elif abs(current_cop - best_cop) < 0.002: #ToDo relativen Fehler nutzen? kein abs() nutzen, da bei kleinen Iterationsschritten sonst iteration zu weit?
                     best_cop = current_cop
                     best_q4 = q4_next
 
