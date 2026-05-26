@@ -30,8 +30,12 @@ def test_sound_speed(p_primary: float, T_primary: float, eta_is:float):
     soundspeed = np.zeros(len(pressures))
     velocity = np.zeros(len(pressures))
     for i, p in enumerate(pressures):
-        state_throat_is = med_prop.calc_state("PS", p, state_primary.s)
-        state_throat = med_prop.calc_state("PH", p, state_primary.h + (state_throat_is.h - state_primary.h)*eta_is)
+        # print(f"calculating for pressure: {p}")
+        try:
+            state_throat_is = med_prop.calc_state("PS", p, state_primary.s)
+            state_throat = med_prop.calc_state("PH", p, state_primary.h + (state_throat_is.h - state_primary.h)*eta_is)
+        except ValueError:
+            continue
         if 0 <= state_throat.q <= 1:
             c = med_prop.get_two_phase_speed_of_sound(p, state_throat.q)
         else:
