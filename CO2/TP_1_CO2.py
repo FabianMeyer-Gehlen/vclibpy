@@ -237,7 +237,7 @@ def main():
 
     #inputs.set(name="q4", value=0.3, description="Quality of refrigerant at exp_valve outlet")
 
-    results_path = Path(r"D:\11_Auslegung_CO2\TP_1\AP4\Okasha_Fix_Neu")
+    results_path = Path(r"C:\Users\Fabian\sciebo\Uni\HiWi\MA Marvin\Simulationsdaten\04")
     results_path.mkdir(parents=True, exist_ok=True)
     print(f"Saving results in '{results_path.absolute()}'.")
 
