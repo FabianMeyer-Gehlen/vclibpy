@@ -79,7 +79,7 @@ class BasicHX(HeatExchanger, abc.ABC):
         rho_seg = 0.5 * (state_in.d + state_out.d)
         dyn_visc_seg = tra_prop_seg.dyn_vis
         A_flow = np.pi / 4 * self.d_hyd ** 2
-        c = self.m_flow / (4 * rho_seg * A_flow)
+        c = self.m_flow / (4 * rho_seg * A_flow) #Todo: why 4*?
         l_seg = A_seg / (np.pi * self.d_outer)
 
         # First, we calculate the Reynolds number:
@@ -87,15 +87,15 @@ class BasicHX(HeatExchanger, abc.ABC):
 
         if Re_seg < 2300:
             f = 64 / Re_seg
-        elif 3000 < Re_seg < 100000:
+        elif 3000 < Re_seg < 100000: #Todo: ungünstige Definitionslücke zwischen laminarer und turbulenter Strömung
             # Blasius Correlation
             f = 0.3164 / (Re_seg ** 0.25)
-        elif 10 ^ 5 < Re_seg < 10 ** 6:
+        elif 10 ** 5 <= Re_seg < 10 ** 6:
             # Hanakov Correlation
             f = (1.8 * np.log(Re_seg) - 1.5) ** -2
-        elif Re_seg >= 10 ** 6:
+        elif 10 ** 6 <= Re_seg <= 5*10 ** 7:
             # Filonenko Correlation
-            f = (1.819 + np.log(Re_seg) - 1.64) ** -(1 / 2)
+            f = (1.819 * np.log(Re_seg) - 1.64) ** -(1 / 2)
         else:
             print(f"Reynolds number {Re_seg} is not in the range of 2300 to 100000, no correlation available.")
             dp_seg = 0.0
@@ -236,7 +236,7 @@ class BasicHX(HeatExchanger, abc.ABC):
                     )
                     dp_total += dp_seg
                     p_next = state_in_element.p - dp_seg
-                    if p_next < 7377300:
+                    if p_next < 7377300: #ToDo: pressure at critical point of CO2, should be adapted for other media
                         print(f"Druck im Gaskühler-Segment unterkritisch durch Druckverlust. p_next={p_next}")
                         return np.inf, -1, dp_total, state_in_element,
                     state_out_element = self.med_prop.calc_state("PH", p_next, state_in_element.h - dh_element)
@@ -327,7 +327,7 @@ class MVB_Condenser(BasicHX, abc.ABC):
         dT_sec_lat = dT_sec * (Q_lat/Q)
         dT_sec_sh = dT_sec *(Q_sh/Q)
 
-        T_sec_sc_in = T_in_sec
+        T_sec_sc_in = T_in_sec  #ToDo: only true for counter flow
         T_sec_sc_out = T_sec_sc_in + dT_sec_sc
         T_sec_lat_in = T_sec_sc_out
         T_sec_lat_out = T_sec_lat_in + dT_sec_lat
