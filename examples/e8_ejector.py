@@ -28,27 +28,21 @@ def test_sound_speed(p_primary: float, T_primary: float, eta_is:float):
     state_primary = med_prop.calc_state("PT", p_primary, T_primary)
     pressures = np.linspace(10e5, state_primary.p, 500)
     soundspeed = np.zeros(len(pressures))
-    soundspeedFromDerivative = np.zeros(len(pressures))
     velocity = np.zeros(len(pressures))
     for i, p in enumerate(pressures):
         state_throat_is = med_prop.calc_state("PS", p, state_primary.s)
         state_throat = med_prop.calc_state("PH", p, state_primary.h + (state_throat_is.h - state_primary.h)*eta_is)
         if 0 <= state_throat.q <= 1:
             c = med_prop.get_two_phase_speed_of_sound(p, state_throat.q)
-            c_2 = med_prop.get_partial_derivative("P", "D", "S", state_throat) ** 0.5
         else:
             try:
                 c = med_prop.get_speed_of_sound(state_throat)
-                c_2 = med_prop.get_speed_of_sound(state_throat)
             except ValueError:
                 c = np.nan
-                c_2 = np.nan
         velocity[i] = np.sqrt(2*(state_primary.h - state_throat.h))
         soundspeed[i] = c
-        soundspeedFromDerivative[i] = c_2
     plt.figure()
     plt.scatter(pressures / 1e5, soundspeed, label='Speed of sound', s=2)
-    plt.scatter(pressures/ 1e5, soundspeedFromDerivative, label='Speed of sound (from derivative)', s=2, color='green')
     plt.scatter(pressures / 1e5, velocity, label='Velocity', s=2, color='orange')
     plt.xlabel('Pressure (bar)')
     plt.ylabel('m/s')
