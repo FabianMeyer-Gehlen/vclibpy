@@ -12,6 +12,7 @@ Functions:
 """
 import abc
 import logging
+import string
 import warnings
 from typing import List
 import numpy as np
@@ -228,13 +229,15 @@ class MedProp(abc.ABC):
         """
         raise NotImplementedError
 
-    def get_two_phase_speed_of_sound(self, p: float, q: float) -> float:
+    def get_two_phase_speed_of_sound(self, p: float, q: float, model: str, y: float=None) -> float:
         """
-        Calculate the speed of sound in the two-phase region based on Attou and Seynhaeve 1999.
+        Calculate the speed of sound in the two-phase region.
 
         Parameters:
             p (float): Pressure in Pa
             q (float): Quality (between 0 and 1)
+            model (str): Model of two-phase speed of sound calculation.
+            y (float, optional): Vaporization Index between 0 and 1. Only needed for DEM models.
 
         Returns:
             float: Speed of sound in m/s

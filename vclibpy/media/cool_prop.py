@@ -186,27 +186,52 @@ class CoolProp(MedProp):
         a = CoolPropInternal.PropsSI('A', 'P', p, 'Q', q, self.fluid_name)
         return a
 
-    def get_two_phase_speed_of_sound(self, p: float, q: float) -> float:
+    def get_two_phase_speed_of_sound(self, p: float, q: float, model: str, y: float=None) -> float:
+        supported_modes = ("Attou_HEM", "Attou_DEM", "Lund")
+        if model not in supported_modes:
+            raise KeyError(
+                f"Given method '{model}' is currently not supported with coolProp"
+                f"Supported modes: {supported_modes}"
+            )
+        if model == "Attou_DEM" and y is None:
+            raise ValueError("Parameter 'y' must be provided when model is 'Attou_DEM'.")
+
         state_two_phase = self.calc_state("PQ", p, q)
         state_vapor = self.calc_state("PQ", p, 1)
         state_liquid = self.calc_state("PQ", p, 0)
 
-        # compute partial derivatives for enthalpy and specific volume
-        dh_dpq_v = self.get_partial_derivative("H", "P", "q", state_vapor)
-        dh_dpq_l = self.get_partial_derivative("H", "P", "q", state_liquid)
-        del_h = q * dh_dpq_v + (1 - q) * dh_dpq_l
+        if model in ("Attou_HEM", "Attou_DEM"):
+            # compute partial derivatives for enthalpy
+            dh_dpq_v = self.get_partial_derivative("H", "P", "q", state_vapor)
+            dh_dpq_l = self.get_partial_derivative("H", "P", "q", state_liquid)
 
-        dD_dpq_v = self.get_partial_derivative("D", "P", "q", state_vapor)
-        dD_dpq_l = self.get_partial_derivative("D", "P", "q", state_liquid)
-        term_v = q * (-1.0) / state_vapor.d ** 2 * dD_dpq_v
-        term_l = (1 - q) * (-1.0) / state_liquid.d ** 2 * dD_dpq_l
-        del_v = term_v + term_l
+            # compute partial derivatives for specific volume. Since CoolProp works with density and not specific volume
+            # we need to apply the chain rule to get the partial derivative of specific volume
+            dD_dpq_v = self.get_partial_derivative("D", "P", "q", state_vapor)
+            dD_dpq_l = self.get_partial_derivative("D", "P", "q", state_liquid)
+            dv_dpq_v = -1.0 / state_vapor.d ** 2 * dD_dpq_v
+            dv_dpq_l = -1.0 / state_liquid.d ** 2 * dD_dpq_l
 
-        numerator = state_two_phase.v ** 2 * (state_vapor.h - state_liquid.h)
-        denominator = ((state_vapor.v - state_liquid.v) * (del_h - state_two_phase.v) - del_v * (
-                    state_vapor.h - state_liquid.h))
-        c_attou = (numerator / denominator) ** 0.5
-        return c_attou
+            if model == "Attou_HEM":
+                del_h = q * dh_dpq_v + (1 - q) * dh_dpq_l
+                del_v = q * dv_dpq_v + (1 - q) * dv_dpq_l
+            else:
+                # v_mixture = y*(state_vapor.q/state_vapor.d + state_liquid.q/state_liquid.d) * (1-y)*
+                del_h = q * dh_dpq_v + (y - q) * dh_dpq_l
+                del_v = q * dv_dpq_v + (y - q) * dv_dpq_l
+
+            numerator = state_two_phase.v ** 2 * (state_vapor.h - state_liquid.h)
+            denominator = ((state_vapor.v - state_liquid.v) * (del_h - state_two_phase.v) - del_v * (
+                        state_vapor.h - state_liquid.h))
+            c_attou = (numerator / denominator) ** 0.5
+            return c_attou
+        elif model == "Lund":
+            c_v = self.get_saturated_speed_of_sound(state_two_phase.p, vapor=True)
+            c_l = self.get_saturated_speed_of_sound(state_two_phase.p, vapor=False)
+            # Calculate vapor void fraction
+            alpha = state_two_phase.q*state_liquid.d/(state_two_phase.q*state_liquid.d+(1-state_two_phase.q)*state_vapor.d)
+            c_lund = 1/(state_two_phase.d*(alpha/(state_vapor.d*c_v**2) + (1-alpha)/(state_liquid.d*c_l**2))) ** 0.5
+            return c_lund
 
     def get_partial_derivative(self, numerator: str, denominator: str, constant: str, state: ThermodynamicState, ):
         if {numerator, denominator, constant} - self._state_function_map.keys():
