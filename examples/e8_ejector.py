@@ -20,14 +20,75 @@ def main(rcParams_path: str = None):
 
     mpl.rcParams['svg.fonttype'] = 'none'  # make pyplot save text as text and not paths, so it is editable in Inkscape
 
-    test_sound_speed(130e5, 47.71 + 273.15, 0.5)
+    # test_sound_speed(129.45e5, 47.71 + 273.15, 0.5)
     # test_ejector()
-    # plot_two_phase_sound_speed(from_derivative = False)
+    # plot_two_phase_sound_speed_3d(from_derivative = True)
+    plot_two_phase_sound_speed(50e5, "q")
+
+
+def plot_two_phase_sound_speed(p:float, mode = "h"):
+    if mode == "h":
+        enthalpies = np.linspace(150e3, 500e3, 500)
+        x = enthalpies
+        m = "PH"
+        factor = 1e3
+        label = 'Enthalpy (kJ/kg)'
+    elif mode == "q":
+        qualities = np.linspace(0, 1, 500)
+        x = qualities
+        m = "PQ"
+        factor = 1
+        label = 'Quality (-)'
+    elif mode == "alpha":
+        alphas = np.linspace(0, 1, 500)
+        state_vapor = med_prop.calc_state("PQ", p, 1)
+        state_liquid = med_prop.calc_state("PQ", p, 0)
+        qualities = np.array([state_vapor.d*alpha/(state_vapor.d*alpha+state_liquid.d*(1-alpha)) for alpha in alphas])
+        x = qualities
+        m = "PQ"
+        factor = 1
+        label = 'void fraction (-)'
+    else:
+        raise ValueError("Invalid mode. Use 'h' for enthalpy or 'q' for quality or 'alpha' for void fraction.")
+    soundspeeds_Attou_HEM = np.zeros_like(x)
+    soundspeeds_derivatives = np.zeros_like(x)
+    soundspeeds_lund = np.zeros_like(x)
+    for i,j in enumerate(x):
+        try:
+            state = med_prop.calc_state(m, p, j)
+            if 0 <= state.q <= 1:
+                c = med_prop.get_two_phase_speed_of_sound(p, state.q, "Attou_HEM")
+                c_d = med_prop.get_partial_derivative("P", "D", "S", state) ** 0.5
+                c_lund = med_prop.get_two_phase_speed_of_sound(p, state.q, "Lund")
+            else:
+                c, c_d, c_lund = med_prop.get_speed_of_sound(state), np.nan, np.nan
+        except ValueError as err:
+            print(f"calculation failed for {j}, because of Error: {err}")
+            c, c_d, c_lund = np.nan, np.nan, np.nan
+        soundspeeds_Attou_HEM[i] = c
+        soundspeeds_lund[i] = c_lund
+        try:
+            soundspeeds_derivatives[i] = c_d
+        except TypeError:
+            soundspeeds_derivatives[i] = np.nan
+    if mode == "alpha":
+        x = alphas
+    plt.figure()
+    plt.scatter(x / factor, soundspeeds_Attou_HEM, label='Speed of sound after Attou_HEM', s=2)
+    plt.scatter(x / factor, soundspeeds_derivatives, label='Speed of sound from derivative', s=2, color='orange')
+    plt.scatter(x / factor, soundspeeds_lund, label='Speed of sound after Lund', s=2, color='green')
+    plt.xlabel(label)
+    plt.ylabel('m/s')
+    plt.title(f'Speed of Sound in CO2 at {p/1e5:.1f} bar')
+    plt.legend()
+    plt.show()
+
 
 def test_sound_speed(p_primary: float, T_primary: float, eta_is:float):
     state_primary = med_prop.calc_state("PT", p_primary, T_primary)
     pressures = np.linspace(10e5, state_primary.p, 500)
     soundspeed = np.zeros(len(pressures))
+    soundspeed_derivative = np.zeros(len(pressures))
     velocity = np.zeros(len(pressures))
     for i, p in enumerate(pressures):
         # print(f"calculating for pressure: {p}")
@@ -37,17 +98,22 @@ def test_sound_speed(p_primary: float, T_primary: float, eta_is:float):
         except ValueError:
             continue
         if 0 <= state_throat.q <= 1:
-            c = med_prop.get_two_phase_speed_of_sound(p, state_throat.q)
+            c = med_prop.get_two_phase_speed_of_sound(p, state_throat.q, "Attou_HEM")
+            c_2 = med_prop.get_partial_derivative("P", "D", "S", state_throat) ** 0.5
         else:
             try:
                 c = med_prop.get_speed_of_sound(state_throat)
+                c_2 = med_prop.get_speed_of_sound(state_throat)
             except ValueError:
                 c = np.nan
+                c_2 = np.nan
         velocity[i] = np.sqrt(2*(state_primary.h - state_throat.h))
         soundspeed[i] = c
+        soundspeed_derivative[i] = c_2
     plt.figure()
     plt.scatter(pressures / 1e5, soundspeed, label='Speed of sound', s=2)
     plt.scatter(pressures / 1e5, velocity, label='Velocity', s=2, color='orange')
+    plt.scatter(pressures / 1e5, soundspeed_derivative, label='Speed of sound from derivative', s=2, color='green')
     plt.xlabel('Pressure (bar)')
     plt.ylabel('m/s')
     plt.title('Speed of Sound and Velocity in Motive Nozzle')
@@ -56,12 +122,15 @@ def test_sound_speed(p_primary: float, T_primary: float, eta_is:float):
 
 def _compute_soundspeed(args):
     p, h, from_derivative = args
-    state = med_prop.calc_state("PH", p, h)
+    try:
+        state = med_prop.calc_state("PH", p, h)
+    except ValueError:
+        return p, h, np.nan
     if 0 <= state.q <= 1:
         if from_derivative:
             c = med_prop.get_partial_derivative("P", "D", "S", state) ** 0.5
         else:
-            c = med_prop.get_two_phase_speed_of_sound(p, state.q)
+            c = med_prop.get_two_phase_speed_of_sound(p, state.q, "Attou_HEM")
     else:
         try:
             c = med_prop.get_speed_of_sound(state)
@@ -69,7 +138,7 @@ def _compute_soundspeed(args):
             c = np.nan
     return p, h, c
 
-def plot_two_phase_sound_speed(from_derivative: bool = False, processes: int = multiprocessing.cpu_count()):
+def plot_two_phase_sound_speed_3d(from_derivative: bool = False, processes: int = multiprocessing.cpu_count()):
     pressures = np.linspace(50e5, 100e5, 500)
     enthalpies = np.linspace(150e3, 500e3, 500)
     combos = [(p,h,from_derivative) for p in pressures for h in enthalpies]
