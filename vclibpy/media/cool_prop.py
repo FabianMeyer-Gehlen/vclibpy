@@ -20,15 +20,39 @@ class CoolProp(MedProp):
         use_high_level_api (bool):
             True to use the high-level api, which is much slower,
             but you can use all modes in calc_state.
-            Default is False.
+            Default is False."PD": Pressure, Density
+            - "PH": Pressure, Enthalpy
+            - "PQ": Pressure, Quality
+            - "PS": Pressure, Entropy
+            - "PT": Pressure, Temperature
+            - "PU": Pressure, Internal Energy
+            - "TD": Temperature, Density
+            - "TH": Temperature, Enthalpy
+            - "TQ": Temperature, Quality
+            - "TS": Temperature, Entropy
+            - "TU": Temperature, Internal Energy
+            - "DH": Density, Enthalpy
+            - "DS": Density, Entropy
+            - "DU": Density, Internal Energy
+            - "HQ": Enthalpy, Quality
     """
 
     _mode_map = {
-        "PT": (CoolPropInternal.PT_INPUTS, True),
-        "TQ": (CoolPropInternal.QT_INPUTS, False),
-        "PS": (CoolPropInternal.PSmass_INPUTS, True),
+        "PD": (CoolPropInternal.DmassP_INPUTS, False),
         "PH": (CoolPropInternal.HmassP_INPUTS, False),
-        "PQ": (CoolPropInternal.PQ_INPUTS, True)
+        "PQ": (CoolPropInternal.PQ_INPUTS, True),
+        "PS": (CoolPropInternal.PSmass_INPUTS, True),
+        "PT": (CoolPropInternal.PT_INPUTS, True),
+        "PU": (CoolPropInternal.PUmass_INPUTS, True),
+        "TD": (CoolPropInternal.DmassT_INPUTS, False),
+        "TH": (CoolPropInternal.HmassT_INPUTS, False),
+        "TQ": (CoolPropInternal.QT_INPUTS, False),
+        "TS": (CoolPropInternal.SmassT_INPUTS, False),
+        "TU": (CoolPropInternal.TUmass_INPUTS, True),
+        "DH": (CoolPropInternal.DmassHmass_INPUTS, True),
+        "DS": (CoolPropInternal.DmassSmass_INPUTS, True),
+        "DU": (CoolPropInternal.DmassUmass_INPUTS, True),
+        "HQ": (CoolPropInternal.HmassQ_INPUTS, True)
     }
 
     _state_function_map = {

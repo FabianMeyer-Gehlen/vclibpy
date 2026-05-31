@@ -78,6 +78,7 @@ class MedProp(abc.ABC):
             - "DH": Density, Enthalpy
             - "DS": Density, Entropy
             - "DU": Density, Internal Energy
+            - "HQ": Enthalpy, Quality
 
         Args:
             mode (str): Defines the given input state variables (see possible modes above).
@@ -92,7 +93,7 @@ class MedProp(abc.ABC):
         """
         available_options = ['PD', 'PH', 'PQ', 'PS', 'PT',
                              'PU', 'TD', 'TH', 'TQ', 'TS',
-                             'TU', 'DH', 'DS', 'DU', ]
+                             'TU', 'DH', 'DS', 'DU', 'HQ']
         assert mode in available_options, f'Given mode {mode} is not in available options'
 
     def terminate(self):
