@@ -268,6 +268,26 @@ class MedProp(abc.ABC):
         """
         raise NotImplementedError
 
+    def calc_phase(self, state: ThermodynamicState) -> int:
+        """
+        Calculate the phase of the given thermodynamic state.
+
+        Args:
+            state (ThermodynamicState): The thermodynamic state to determine the phase for.
+
+        Returns:
+            int: The phase of the state as integer. The values correspond to:
+                0: Subcritical liquid
+                1: Supercritical (p>pc, T>Tc)
+                2: Supercritical gas (p<pc, T>Tc)
+                3: Supercritical liquid (p>pc, T<Tc)
+                4: At the critical point
+                5: Subcritical gas
+                6: Twophase
+                7: Unknown phase
+        """
+        raise NotImplementedError
+
 def get_two_phase_limits(med_prop: MedProp, p_step: int = 1000, p_min: int = int(1e3)) -> List[ThermodynamicState]:
     """
     Return the states representing the boundaries of the two-phase section for the given fluid.

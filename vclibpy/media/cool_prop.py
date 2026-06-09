@@ -268,5 +268,9 @@ class CoolProp(MedProp):
         pt = self._helmholtz_equation_of_state.p()
         return Tt, pt
 
+    def calc_phase(self, state: ThermodynamicState):
+        self._update_coolprop_heos("PH", state.p, state.h)
+        return self._helmholtz_equation_of_state.phase()
+
 if __name__ == '__main__':
     CoolProp("Propan")
