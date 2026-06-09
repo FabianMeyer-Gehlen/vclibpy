@@ -58,6 +58,96 @@ class EjectorLiu(Ejector):
         self.d_diff = d_diff
 
 
+    def find_evaporation_point(self, eta_is_motive: float, p_suction: float):
+        """
+        Find the point during expansion in motive nozzle, where fluid would start to evaporate
+
+        Args:
+            eta_is_motive: isentropic efficiency of expansion through motive nozzle
+            p_suction: pressure in suction nozzle
+
+        Returns:
+
+        """
+
+        _, p_crit, d_crit = self.med_prop.get_critical_point()
+        q_target: float = np.nan
+        if self.state_primary.p < p_crit:
+            try:
+                state_sat_l = self.med_prop.calc_state("PQ", self.state_primary.p, 0)
+                state_sat_v = self.med_prop.calc_state("PQ", self.state_primary.p, 1)
+            except ValueError:
+                state_sat_l = None
+                state_sat_v = None
+            if state_sat_l is not None and state_sat_v is not None:
+                if self.state_primary.h <= state_sat_l.h:
+                    q_target = 0.0
+                elif self.state_primary.h >= state_sat_v.h:
+                    q_target = 1.0
+            else:
+                if self.state_primary.d <= d_crit:
+                    q_target = 1.0
+                else:
+                    q_target = 0.0
+        else:
+            if self.state_primary.d <= d_crit:
+                q_target = 1.0
+            else:
+                q_target = 0.0
+
+        p_upper = min(self.state_primary.p, p_crit * 0.9999)
+        p_lower = p_suction * 1.0001
+        p_evap = p_lower
+
+        newton_relaxation_factor_evap = self.newton_relaxation_factor
+        rel_err_evap: list[float] = []
+        num_evap_iterations = 0
+        prev_res_evap = None
+        # print(f"p_lower: {p_lower}, p_upper: {p_upper}, q_target: {q_target}")
+
+        while True:
+            num_evap_iterations += 1
+            if num_evap_iterations >= self.max_num_iterations:
+                raise RuntimeError("Maximum number of iterations for evaporation onset calculation exceeded. Stopping")
+
+            p_evap = np.clip(p_evap, p_lower, p_upper)
+            state_is = self.med_prop.calc_state("PS", p_evap, self.state_primary.s)
+            h_actual = self.state_primary.h - eta_is_motive * (self.state_primary.h - state_is.h)
+            state_sat_0 = self.med_prop.calc_state("PQ", p_evap, 0)
+            state_sat_1 = self.med_prop.calc_state("PQ", p_evap, 1)
+            if abs(h_actual-state_sat_0.h) < abs(h_actual-state_sat_1.h):
+                q_target = 0
+                state_sat = state_sat_0
+            else:
+                q_target = 1
+                state_sat = state_sat_1
+
+            res = h_actual - state_sat.h
+            rel_err_evap.append(res / state_sat.h * 100)
+            if abs(rel_err_evap[-1]) < self.max_err:
+                return p_evap, q_target
+
+            dh_is_dp = self.med_prop.get_partial_derivative("H", "P", "S", state_is)
+            dh_sat_dp = self.med_prop.get_partial_derivative("H", "P", "q", state_sat)
+            differential = eta_is_motive * dh_is_dp - dh_sat_dp
+            if differential == 0:
+                raise RuntimeError("Zero differential while locating evaporation onset in motive nozzle.")
+            p_step = -res / differential
+            # if abs(p_step) >= self.step_max:
+            #     p_step = self.step_max * np.sign(p_step)
+
+            if prev_res_evap is not None:
+                if np.sign(res) != np.sign(prev_res_evap) or abs(res) > abs(prev_res_evap):
+                    newton_relaxation_factor_evap = max(0.1, newton_relaxation_factor_evap * 0.7)
+                else:
+                    newton_relaxation_factor_evap = min(1.0, newton_relaxation_factor_evap * 1.1)
+
+            prev_res_evap = res
+            # print(
+            #     f"current step: {num_evap_iterations}, relative error: {rel_err_evap[-1]}, differential: {differential}, p_step: {p_step}, current pressure: {p_evap}")
+            p_evap = p_evap + p_step * newton_relaxation_factor_evap
+
+
     def calculate_motive_nozzle(self, p_motive: float, h_motive: float, p_suction: float):
         """
         Calculate state and velocity inside motive nozzle throat
