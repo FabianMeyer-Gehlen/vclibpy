@@ -146,9 +146,9 @@ class CoolProp(MedProp):
             self._helmholtz_equation_of_state.update(i_input, var2, var1)
 
     def get_critical_point(self):
-        Tc = CoolPropInternal.PropsSI("TCRIT", self.fluid_name)
-        pc = CoolPropInternal.PropsSI("PCRIT", self.fluid_name)
-        dc = CoolPropInternal.PropsSI("RHOCRIT", self.fluid_name)
+        Tc = self._helmholtz_equation_of_state.T_critical()
+        pc = self._helmholtz_equation_of_state.p_critical()
+        dc = self._helmholtz_equation_of_state.rhomass_critical()
         return Tc, pc, dc
 
     def get_molar_mass(self):
