@@ -24,7 +24,21 @@ def main(rcParams_path: str = None):
     # test_ejector()
     # plot_two_phase_sound_speed_3d(from_derivative = True)
     plot_two_phase_sound_speed(50e5, "q")
+    # test_triple_point_calculation(med_prop.get_triple_point)
 
+def test_triple_point_calculation(func, runs: int = 100):
+    import time
+
+    times = []
+
+    for _ in range(runs):
+        start = time.perf_counter()
+        func()
+        end = time.perf_counter()
+        times.append(end - start)
+
+    print(f"Average execution time over {runs} runs: {sum(times) / runs:.6f} seconds")
+    print(f"Min: {min(times):.6f} s, Max: {max(times):.6f} s")
 
 def plot_two_phase_sound_speed(p:float, mode = "h"):
     if mode == "h":
