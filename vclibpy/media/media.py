@@ -258,6 +258,16 @@ class MedProp(abc.ABC):
         """
         raise NotImplementedError
 
+    def get_triple_point(self):
+        """
+        Retrieve triple point information for the fluid.
+
+        Returns:
+            Tuple[float, float]: A tuple containing triple point information
+            (Temperature T_t [K], Pressure p_t [Pa]).
+        """
+        raise NotImplementedError
+
 def get_two_phase_limits(med_prop: MedProp, p_step: int = 1000, p_min: int = int(1e3)) -> List[ThermodynamicState]:
     """
     Return the states representing the boundaries of the two-phase section for the given fluid.

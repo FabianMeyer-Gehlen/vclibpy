@@ -262,5 +262,11 @@ class CoolProp(MedProp):
             else:
                 return self._helmholtz_equation_of_state.first_partial_deriv(numerator_code, denominator_code, constant_code)
 
+    def get_triple_point(self):
+        Tt = self._helmholtz_equation_of_state.Ttriple()
+        self._update_coolprop_heos("TQ", self._helmholtz_equation_of_state.Ttriple(), 0) # The function AbstractState.p_triple() seems to be missing in the CoolProp Python wrapper. Therefore, we need to calculate the triple point pressure manually.
+        pt = self._helmholtz_equation_of_state.p()
+        return Tt, pt
+
 if __name__ == '__main__':
     CoolProp("Propan")
