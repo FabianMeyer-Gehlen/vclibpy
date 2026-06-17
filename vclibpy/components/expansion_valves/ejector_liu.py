@@ -67,33 +67,12 @@ class EjectorLiu(Ejector):
             p_suction: pressure in suction nozzle
 
         Returns:
+            Tuple[float, float]: A tuple containing information on point of evaporation
+            (Pressure p_evap [Pa], Vapor quality q_target [-], which is 0 or 1, depending on whether evaporation starts on saturated liquid or vapor line)
 
         """
 
-        _, p_crit, d_crit = self.med_prop.get_critical_point()
-        q_target: float = np.nan
-        if self.state_primary.p < p_crit:
-            try:
-                state_sat_l = self.med_prop.calc_state("PQ", self.state_primary.p, 0)
-                state_sat_v = self.med_prop.calc_state("PQ", self.state_primary.p, 1)
-            except ValueError:
-                state_sat_l = None
-                state_sat_v = None
-            if state_sat_l is not None and state_sat_v is not None:
-                if self.state_primary.h <= state_sat_l.h:
-                    q_target = 0.0
-                elif self.state_primary.h >= state_sat_v.h:
-                    q_target = 1.0
-            else:
-                if self.state_primary.d <= d_crit:
-                    q_target = 1.0
-                else:
-                    q_target = 0.0
-        else:
-            if self.state_primary.d <= d_crit:
-                q_target = 1.0
-            else:
-                q_target = 0.0
+        _, p_crit,_ = self.med_prop.get_critical_point()
 
         p_upper = min(self.state_primary.p, p_crit * 0.9999)
         p_lower = p_suction * 1.0001
@@ -181,10 +160,46 @@ class EjectorLiu(Ejector):
         if not 0<= eta_is_motive <= 1:
            raise ValueError("eta_is_motive must be between 0 and 1")
 
-        # Initial guess for p_throat
-        p_throat: list[float] = []
-        p_throat.append(p_suction + (p_motive-p_suction)*0.99)  #ToDo find better start value for p_throat
-        p_throat.append(p_throat[0] * (1 + self.newton_step_size))
+        # Find pressure during expansion, where fluid would start to evaporate
+        p_evap_start, q_evap_start = self.find_evaporation_point(eta_is_motive, p_suction)
+
+        # Calculate speed of sound for saturated and two phase side, to check if expansion goes through discontinuity
+        c_evap_start_liquid = self.med_prop.get_saturated_speed_of_sound(p_evap_start, bool(q_evap_start))
+        c_evap_start_two_phase = self.med_prop.get_two_phase_speed_of_sound(p_evap_start, q_evap_start, "Attou_HEM")
+        h_throat_eb = self.state_primary.h - eta_is_motive * (self.state_primary.h - self.med_prop.calc_state("PS", p_evap_start, self.state_primary.s).h) # Calculate enthalpy of fluid from energy balance at start of evaporation during expansion
+        v_evap_start_eb = (2*(self.state_primary.h - h_throat_eb) )**0.5
+
+        # Riley et al. assume the fluid to behave as a saturated liquid if the expansion goes through the discontinuity or if it goes sonic inbetween +-5 % of the pressure at that point
+        # Therefore we need to calculate the speed of sound at p_evap_start*1.05 and check if the velocity at that point from EB lies below that. If that is the case and v_evap_start_eb>v_evap_start_liquid, then we need to assume saturated liquid.
+        # Also, we need to calculate the speed of sound at p_evap_start*0.95 and check if the velocity at that point from EB lies above that. If that is the case and v_evap_start_EB<v_evap_start_two_phase, then we need to assume saturated liquid.
+        p_105 = p_evap_start * 1.05
+        p_095 = p_evap_start * 0.95
+        state_throat_105 = self.med_prop.calc_state("PH", p_105, self.state_primary.h - eta_is_motive *
+                                                    (self.state_primary.h - self.med_prop.calc_state("PS", p_105, self.state_primary.s).h))
+        state_throat_095 = self.med_prop.calc_state("PH", p_095, self.state_primary.h - eta_is_motive *
+                                                    (self.state_primary.h - self.med_prop.calc_state("PS", p_095, self.state_primary.s).h))
+        c_evap_start_p_105 = self.med_prop.get_speed_of_sound(state_throat_105)
+        c_evap_start_p_095 = self.med_prop.get_two_phase_speed_of_sound(p_095, state_throat_095.q, "Attou_HEM")
+        v_105_eb = (2*(self.state_primary.h - state_throat_105.h) )**0.5
+        v_095_eb = (2*(self.state_primary.h - state_throat_095.h) )**0.5
+
+        if (c_evap_start_two_phase < v_evap_start_eb < c_evap_start_liquid
+                or (v_evap_start_eb<c_evap_start_two_phase and v_095_eb>c_evap_start_p_095)
+                or (v_evap_start_eb>c_evap_start_liquid and v_105_eb<c_evap_start_p_105)): # if we land in the area of discontinuity, we assume the fluid behaves as a saturated liquid (like Barta et al. did in their implementation)
+            self.state_primary_throat = self.med_prop.calc_state("PH", p_evap_start, h_throat_eb)
+            self.m_flow_primary = (self.state_primary_throat.d * np.pi * 1 / 4 * (self.d_throat * 1e-3) ** 2 *
+                                   v_evap_start_eb)
+            self.v_throat = v_evap_start_eb
+            return
+        elif v_evap_start_eb < c_evap_start_two_phase: # initial guess for p_throat depending on which side of discontinuity we land on
+            p_throat: list[float] = []
+            p_throat.append(p_evap_start*0.95)
+            p_throat.append(p_throat[0] * (1 + self.newton_step_size))
+        else:
+            p_throat: list[float] = []
+            p_throat.append(p_evap_start*1.05)
+            p_throat.append(p_throat[0] * (1 + self.newton_step_size))
+
         rel_err = []  # relative error in percent
         num_iterations = 0  # Number of iterations
 
